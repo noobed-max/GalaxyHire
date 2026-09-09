@@ -1,0 +1,33 @@
+{
+  // ── The RUNTIME config. tsx reads this one. ──
+  //
+  // This used to carry two load-bearing workarounds for the ever-jobs NestJS connector tree
+  // (`experimentalDecorators`, and `vendor/**/*` in `include` so tsx's single-tsconfig transform
+  // reached it). Both died with the ever-jobs deletion: career-ops providers are plain ESM `.mjs`
+  // loaded at runtime by the vendored `_registry.mjs` via dynamic `import()` — tsx never has to
+  // transform them, so they need no place in this config at all.
+  //
+  // `strict` stays off for the runtime transform; our own code is typechecked strictly by
+  // tsconfig.typecheck.json — `npm run typecheck`.
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+
+    "strict": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@galaxyhire/contract": ["../../packages/contract/src/index.ts"]
+    }
+  },
+  "include": ["src", "test"]
+}

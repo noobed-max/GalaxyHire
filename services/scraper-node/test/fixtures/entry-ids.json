@@ -1,0 +1,147 @@
+{
+ "//": "Shared golden list for the portal-id rule, implemented twice (TS: src/config.ts resolveEntryId; Python: galaxy/scrape/catalog.py resolve_entry_id). Both suites assert against this file, because the UI sends ids the Node worker must resolve identically. When adding a URL shape here, update both implementations in the same commit.",
+ "cases": [
+  {
+   "entry": {
+    "name": "Arbeitnow",
+    "provider": "arbeitnow"
+   },
+   "id": "arbeitnow"
+  },
+  {
+   "entry": {
+    "name": "JustJoin",
+    "provider": "justjoin",
+    "careers_url": "https://justjoin.it/job-offers/all-locations"
+   },
+   "id": "justjoin"
+  },
+  {
+   "entry": {
+    "name": "GitLab",
+    "provider": "greenhouse",
+    "api": "https://boards-api.greenhouse.io/v1/boards/gitlab/jobs"
+   },
+   "id": "greenhouse:gitlab"
+  },
+  {
+   "entry": {
+    "name": "PolyAI",
+    "provider": "greenhouse",
+    "careers_url": "https://job-boards.eu.greenhouse.io/polyai"
+   },
+   "id": "greenhouse:polyai"
+  },
+  {
+   "entry": {
+    "name": "Acme",
+    "provider": "greenhouse",
+    "careers_url": "https://boards.greenhouse.io/acme"
+   },
+   "id": "greenhouse:acme"
+  },
+  {
+   "entry": {
+    "name": "OpenAI",
+    "provider": "ashby",
+    "careers_url": "https://jobs.ashbyhq.com/openai"
+   },
+   "id": "ashby:openai"
+  },
+  {
+   "entry": {
+    "name": "Spotify",
+    "provider": "lever",
+    "careers_url": "https://jobs.lever.co/spotify"
+   },
+   "id": "lever:spotify"
+  },
+  {
+   "entry": {
+    "name": "SpotifyEU",
+    "provider": "lever",
+    "careers_url": "https://jobs.eu.lever.co/spotify"
+   },
+   "id": "lever:spotify"
+  },
+  {
+   "entry": {
+    "name": "SomeCo",
+    "provider": "teamtailor",
+    "careers_url": "https://someco.teamtailor.com"
+   },
+   "id": "teamtailor:someco"
+  },
+  {
+   "entry": {
+    "name": "Demo",
+    "provider": "teamtailor",
+    "careers_url": "https://career.teamtailor.com"
+   },
+   "id": "teamtailor:career"
+  },
+  {
+   "entry": {
+    "name": "Co",
+    "provider": "workable",
+    "careers_url": "https://apply.workable.com/wework"
+   },
+   "id": "workable:wework"
+  },
+  {
+   "entry": {
+    "name": "N",
+    "provider": "icims",
+    "careers_url": "https://careers-nvidia.icims.com/jobs"
+   },
+   "id": "icims"
+  },
+  {
+   "entry": {
+    "name": "GIS",
+    "provider": "workday",
+    "api": "https://gis.wd1.myworkdayjobs.com/wday/cxs/gis/GIS/jobs"
+   },
+   "id": "workday:gis"
+  },
+  {
+   "entry": {
+    "name": "NVIDIA",
+    "provider": "workday",
+    "careers_url": "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite"
+   },
+   "id": "workday:nvidiaexternalcareersite"
+  },
+  {
+   "entry": {
+    "name": "AcmeHR",
+    "provider": "bamboohr",
+    "careers_url": "https://acme.bamboohr.com/careers"
+   },
+   "id": "bamboohr:acme"
+  },
+  {
+   "entry": {
+    "name": "JibeCo",
+    "provider": "jibeapply",
+    "careers_url": "https://jibeco.jibeapply.com/jobs"
+   },
+   "id": "jibeapply:jibeco"
+  },
+  {
+   "entry": {
+    "name": "BoardOnly",
+    "careers_url": "https://careers.example.com/openings"
+   },
+   "id": "BoardOnly"
+  },
+  {
+   "entry": {
+    "name": "Venant",
+    "provider": "recruitee",
+    "careers_url": "https://careers.recruitee.com"
+   },
+   "id": "recruitee"
+  }
+ ]
+}

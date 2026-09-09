@@ -1,0 +1,66 @@
+# deps
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# builds
+dist/
+build/
+coverage/
+apps/web/src-tauri/target/
+apps/web/src-tauri/resources/
+apps/web/src-tauri/gen/
+*.tsbuildinfo
+
+# caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.nx/
+.vite/
+.vite-temp/
+node_modules/.cache/
+
+# runtime state — regenerable, never committed
+services/corpus/data/objects/raw/*
+services/corpus/data/objects/assets/*
+!services/corpus/data/objects/*/.gitkeep
+services/corpus/data/resumes/*
+!services/corpus/data/resumes/.gitkeep
+apps/api/build_cache/
+var/
+*.sqlite
+*.sqlite3
+*.db
+*.lance/
+kuzu_db/
+
+# secrets + local config
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+credentials.json
+
+# editors / OS
+.DS_Store
+.idea/
+*.swp
+
+# vendored connector trees keep their own lockfiles out
+services/scraper-node/vendor/**/package-lock.json
+services/scraper-node/config/portals.yml
+
+.run/
+
+# test scratch databases/dirs
+apps/api/tests/.scratch-*/
+apps/api/tests/*.db.pre-reset.bak*
+apps/api/tests/*.kuzu

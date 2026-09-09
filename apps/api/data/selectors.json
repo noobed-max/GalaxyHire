@@ -1,0 +1,85 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-05-03",
+  "platforms": {
+    "workday": {
+      "detect": ["myworkdayjobs.com", "workday.com"],
+      "fields": [
+        { "selector": "input[data-automation-id='legalNameSection_firstName']", "type": "first_name" },
+        { "selector": "input[data-automation-id='legalNameSection_lastName']",  "type": "last_name"  },
+        { "selector": "input[data-automation-id='email']",                      "type": "email"      },
+        { "selector": "input[data-automation-id='phone']",                      "type": "phone"      },
+        { "selector": "input[data-automation-id='addressSection_city']",        "type": "city"       },
+        { "selector": "textarea[data-automation-id='coverLetterText']",         "type": "cover_letter" }
+      ]
+    },
+    "greenhouse": {
+      "detect": ["greenhouse.io", "boards.greenhouse.io"],
+      "fields": [
+        { "selector": "input#first_name",           "type": "first_name"   },
+        { "selector": "input#last_name",            "type": "last_name"    },
+        { "selector": "input#email",                "type": "email"        },
+        { "selector": "input#phone",                "type": "phone"        },
+        { "selector": "input#job_application_location",      "type": "city" },
+        { "selector": "textarea#cover_letter_text", "type": "cover_letter" },
+        { "selector": "input[name='question[linkedin_profile]']", "type": "linkedin_url" }
+      ]
+    },
+    "lever": {
+      "detect": ["jobs.lever.co", "lever.co"],
+      "fields": [
+        { "selector": "input[name='name']",     "type": "name"         },
+        { "selector": "input[name='email']",    "type": "email"        },
+        { "selector": "input[name='phone']",    "type": "phone"        },
+        { "selector": "input[name='org']",      "type": "current_company" },
+        { "selector": "input[name='urls[LinkedIn]']",  "type": "linkedin_url" },
+        { "selector": "input[name='urls[GitHub]']",    "type": "github"       },
+        { "selector": "input[name='urls[Portfolio]']", "type": "website"      },
+        { "selector": "textarea[name='comments']",     "type": "cover_letter" }
+      ]
+    },
+    "icims": {
+      "detect": ["icims.com", "careers.icims.com"],
+      "fields": [
+        { "selector": "input[id*='firstname']",    "type": "first_name" },
+        { "selector": "input[id*='lastname']",     "type": "last_name"  },
+        { "selector": "input[id*='email']",        "type": "email"      },
+        { "selector": "input[id*='phone']",        "type": "phone"      },
+        { "selector": "input[id*='linkedin']",     "type": "linkedin_url" }
+      ]
+    },
+    "smartrecruiters": {
+      "detect": ["smartrecruiters.com", "jobs.smartrecruiters.com"],
+      "fields": [
+        { "selector": "input[name='firstName']",   "type": "first_name" },
+        { "selector": "input[name='lastName']",    "type": "last_name"  },
+        { "selector": "input[name='email']",       "type": "email"      },
+        { "selector": "input[name='phone']",       "type": "phone"      },
+        { "selector": "input[name='web[LINKEDIN_URL]']", "type": "linkedin_url" }
+      ]
+    },
+    "ashby": {
+      "detect": ["ashbyhq.com", "jobs.ashbyhq.com"],
+      "fields": [
+        { "selector": "input[name='name']",       "type": "name"        },
+        { "selector": "input[name='email']",      "type": "email"       },
+        { "selector": "input[name='phone']",      "type": "phone"       },
+        { "selector": "input[name='linkedIn']",   "type": "linkedin_url" },
+        { "selector": "input[name='github']",     "type": "github"      },
+        { "selector": "input[name='website']",    "type": "website"     }
+      ]
+    }
+  },
+  "generic": [
+    { "selector": "input[name*='first_name'], input[name*='firstName'], input[autocomplete='given-name']",   "type": "first_name"   },
+    { "selector": "input[name*='last_name'],  input[name*='lastName'],  input[autocomplete='family-name']",  "type": "last_name"    },
+    { "selector": "input[name*='full_name'],  input[name*='fullName'],  input[autocomplete='name']",         "type": "name"         },
+    { "selector": "input[type='email'], input[name*='email'], input[autocomplete='email']",                  "type": "email"        },
+    { "selector": "input[name*='phone'], input[name*='mobile'], input[type='tel'], input[autocomplete*='tel']", "type": "phone"     },
+    { "selector": "input[name*='linkedin'], input[placeholder*='LinkedIn' i]",                               "type": "linkedin_url" },
+    { "selector": "input[name*='github'],   input[placeholder*='GitHub' i]",                                 "type": "github"       },
+    { "selector": "input[name*='website'],  input[name*='portfolio'], input[name*='personal_url']",          "type": "website"      },
+    { "selector": "input[name*='city'],     input[name*='location'], input[autocomplete='address-level2']",  "type": "city"         },
+    { "selector": "textarea[name*='cover'], textarea[name*='letter'], textarea[name*='message'], textarea[name*='why']", "type": "cover_letter" }
+  ]
+}

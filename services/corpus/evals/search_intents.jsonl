@@ -1,0 +1,6 @@
+{"name":"entry-software-india","args":{"search_term":"software engineer","max_years":2,"max_seniority":"junior","location":"India","limit":10}}
+{"name":"entry-backend-remote","args":{"search_term":"backend software engineer","max_years":2,"max_seniority":"junior","remote":true,"limit":10}}
+{"name":"entry-python","args":{"search_term":"python software engineer","max_years":2,"max_seniority":"junior","limit":10}}
+{"name":"frontend-typescript","args":{"search_term":"frontend engineer","positive_skills":["typescript","react"],"max_seniority":"mid","limit":10}}
+{"name":"platform-kubernetes","args":{"search_term":"platform engineer","positive_skills":["kubernetes"],"max_seniority":"mid","limit":10}}
+{"name":"negative-control","args":{"search_term":"underwater basket weaving zookeeper","limit":10}}

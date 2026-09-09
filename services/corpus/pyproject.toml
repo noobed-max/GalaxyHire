@@ -1,0 +1,71 @@
+[project]
+name = "galaxy"
+version = "0.1.0"
+description = "GalaxyHire corpus backend — ingestion, deduplication, search, and generation"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "httpx>=0.27",
+    "curl-cffi>=0.7",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "pgvector>=0.3.6",
+    "alembic>=1.14",
+    "redis>=5.2",
+    "arq>=0.26",
+    "structlog>=24.4",
+    "python-dateutil>=2.9",
+    "feedparser>=6.0",
+    "beautifulsoup4>=4.12",
+    "python-docx>=1.1",
+    "fpdf2>=2.8",
+    "pypdf>=6.14.2",
+    "python-multipart>=0.0.32",
+    # The portal catalog (galaxy/scrape/catalog.py) reads the scraper's portals.yml. The id rule
+    # here must agree with services/scraper-node/src/config.ts::resolveEntryId — the cross-check
+    # test (tests/test_portal_catalog.py) pins the two implementations together.
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Real semantic embeddings: fastembed bundles the ONNX runtime + tokenizer and auto-downloads
+# all-MiniLM-L6-v2 (384-d, normalized). Enable with `uv sync --extra embed` +
+# EMBEDDING_VERSION=minilm-l6-v2. Falls back to the offline hashing embedder if absent.
+embed = [
+    "fastembed>=0.4",
+]
+browser = [
+    "camoufox>=0.5.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "respx>=0.21",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: FastAPI uses callables (Depends/Header/Query) as argument defaults by design.
+ignore = ["B008"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["galaxy"]

@@ -1,0 +1,14 @@
+{
+  // Strict typechecking for *our* code only — `npm run typecheck`.
+  //
+  // Separate from tsconfig.json because that one has to stay permissive and include the vendor
+  // tree for tsx to load the connectors at all (see the comments there). Typechecking 1808
+  // vendored packages written against a non-strict config would drown our own errors in theirs.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src", "test"]
+}

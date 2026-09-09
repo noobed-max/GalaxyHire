@@ -1,0 +1,470 @@
+from __future__ import annotations
+
+import re
+
+from generation.generators.base import GeneratedAsset, _DocPackage
+from generation.generators.keywords import _job_keyword_terms
+from generation.generators.outreach_email import _fallback_outreach
+from generation.selection import is_empty_selection, picked_points_by_row
+
+
+URL_RE = re.compile(r"https?://\S+|www\.\S+", re.I)
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
+PHONE_RE = re.compile(r"(?:\+?\d[\d\s().-]{7,}\d)")
+
+
+def _build_proof(profile: dict) -> str:
+    """Build proof-of-work string from profile dict -- avoids dead PROJ_UTILIZES graph edges."""
+    parts = []
+    for proj in profile.get("projects", []):
+        stack = proj.get("stack", [])
+        if isinstance(stack, list):
+            stack = ", ".join(stack)
+        title  = proj.get("title", "")
+        impact = proj.get("impact", "")
+        if title:
+            parts.append(f"Project: {title} | Stack: {stack} | Impact: {impact}")
+    for exp in profile.get("exp", []):
+        role   = exp.get("role", "")
+        co     = exp.get("co", "")
+        period = exp.get("period", "")
+        desc   = exp.get("d", "")
+        if role:
+            parts.append(f"Role: {role} at {co} ({period}) | {desc}")
+    skills = [s["n"] for s in profile.get("skills", []) if s.get("n")]
+    if skills:
+        parts.append(f"Skills: {', '.join(skills)}")
+    return "\n".join(parts) if parts else ""
+
+
+def _keywords(text: str) -> set[str]:
+    stop = {
+        "and", "the", "with", "for", "from", "that", "this", "you", "are",
+        "job", "role", "engineer", "developer", "company", "team", "will",
+        "have", "has", "using", "build", "work", "your", "their",
+    }
+    return {t for t in re.findall(r"[a-zA-Z][a-zA-Z0-9+#.-]{1,}", text.lower()) if t not in stop}
+
+
+def _clean_sentence(value: str) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip(" -;\n\t")
+    if not text:
+        return ""
+    return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
+def _strip_urls(value: str) -> str:
+    return URL_RE.sub("", str(value or ""))
+
+
+def _safe_text(value: str) -> str:
+    text = _strip_urls(value)
+    text = EMAIL_RE.sub("", text)
+    text = PHONE_RE.sub("", text)
+    return re.sub(r"\s+", " ", text).strip(" .;|-")
+
+
+def _compact_list(values: list[str], limit: int = 18) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        item = re.sub(r"\s+", " ", str(value or "")).strip(" ,.;")
+        key = item.lower()
+        if item and key not in seen:
+            seen.add(key)
+            out.append(item)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _dedupe_sentences(values: list[str], limit: int = 8) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        item = _clean_sentence(value)
+        key = item.lower()
+        if item and key not in seen:
+            seen.add(key)
+            out.append(item)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _lead_text(lead: dict) -> str:
+    return "\n".join([
+        str(lead.get("title", "")),
+        str(lead.get("company", "")),
+        str(lead.get("description", "")),
+        str(lead.get("reason", "")),
+        "\n".join(str(item) for item in lead.get("match_points", []) or []),
+    ])
+
+
+def _profile_skill_names(profile: dict) -> list[str]:
+    return _compact_list([str(skill.get("n", "") or skill.get("name", "")) for skill in profile.get("skills", []) or []], 80)
+
+
+def _prioritized_skills(profile: dict, lead: dict, limit: int = 28) -> list[str]:
+    names = _profile_skill_names(profile)
+    jd_terms = _job_keyword_terms(_lead_text(lead))
+    exact = [skill for skill in names if any(skill.lower() == term.lower() for term in jd_terms)]
+    fuzzy = [skill for skill in names if skill not in exact and any(skill.lower() in term.lower() or term.lower() in skill.lower() for term in jd_terms)]
+    rest = [skill for skill in names if skill not in exact and skill not in fuzzy]
+    return _compact_list([*exact, *fuzzy, *rest], limit)
+
+
+def _fallback_role(profile: dict, lead: dict) -> str:
+    """Field-neutral role label: the JD title, else the candidate's own target role /
+    summary, else a neutral phrase — never a hardcoded 'Software Engineer'."""
+    title = str(lead.get("title") or "").strip()
+    if title:
+        return title
+    desired = str(profile.get("desired_position") or "").strip()
+    if desired:
+        return desired
+    summary = str(profile.get("s") or "").strip()
+    if summary:
+        return summary.split(".")[0].split(",")[0].strip()[:60] or "the advertised role"
+    return "the advertised role"
+
+
+def _impact_bullets(text: str, fallback: str, limit: int = 3) -> list[str]:
+    chunks = re.split(r"(?:\n+|[.;]\s+|\u2022)", str(text or ""))
+    bullets = []
+    for chunk in chunks:
+        clean = _safe_text(chunk)
+        lower = clean.lower()
+        if len(clean) <= 16:
+            continue
+        if lower in {"certificate link", "view certificate", "credential link"}:
+            continue
+        bullets.append(_clean_sentence(clean))
+    return _dedupe_sentences(bullets or [_clean_sentence(fallback)], limit)
+
+
+def _inferred_skill_category(name: str, current: str = "") -> str:
+    raw = (current or "").strip().lower()
+    if raw and raw not in {"technical", "portfolio", "project_stack", "general"}:
+        return current
+    lower = name.lower()
+    if lower in {"python", "javascript", "typescript", "sql", "bash", "go", "rust", "java", "c++", "c#"}:
+        return "language"
+    if any(term in lower for term in ("react", "next", "fastapi", "django", "flask", "node", "tailwind", "vite", "langchain", "langgraph")):
+        return "framework"
+    if any(term in lower for term in ("postgres", "mysql", "mongo", "redis", "sqlite", "lancedb", "kuzu", "qdrant", "drizzle", "prisma")):
+        return "database"
+    if any(term in lower for term in ("docker", "kubernetes", "vercel", "aws", "gcp", "azure", "linux", "git", "ci/cd")):
+        return "tool"
+    if any(term in lower for term in ("rag", "llm", "agent", "openai", "groq", "deepgram", "livekit", "gemini")):
+        return "ai"
+    return current or "technical"
+
+
+def _project_bullets(project: dict, lead: dict, jd_terms: list[str]) -> list[str]:
+    title = project.get("title", "Project")
+    stack = project.get("stack", [])
+    stack_text = ", ".join(stack) if isinstance(stack, list) else str(stack or "")
+    impact = project.get("impact", "")
+    fallback = f"Built {title} with {stack_text}" if stack_text else f"Built {title}"
+    base = _impact_bullets(impact, fallback, 3)
+    bullets = [bullet for bullet in base if bullet]
+    if stack_text:
+        bullets.append(_clean_sentence(f"Tech: {stack_text}"))
+    return [bullet for bullet in bullets if bullet][:4]
+
+
+def _experience_bullets(exp: dict, lead: dict, skills: list[str]) -> list[str]:
+    desc = str(exp.get("d", "") or exp.get("description", ""))
+    role = str(exp.get("role", "Role") or "Role")
+    company = str(exp.get("co", "") or exp.get("company", ""))
+    base = _impact_bullets(desc, f"Delivered {role} work for {company or 'the organization'} using {', '.join(skills[:4])}", 4)
+    return base[:4]
+
+
+def _line_items(values: list, limit: int = 4) -> str:
+    items = []
+    for value in values[:limit]:
+        if isinstance(value, dict):
+            text = value.get("title") or value.get("name") or value.get("n") or ""
+        else:
+            text = str(value or "")
+        text = re.sub(r"\s+", " ", text).strip()
+        text = re.sub(r"(?i)\b(?:certificate|credential)\s+link\b", "", text)
+        text = URL_RE.sub("", text).strip(" -|")
+        if text:
+            items.append(f"- {text}")
+    return "\n".join(items)
+
+
+def _valid_resume_project(project: dict) -> bool:
+    title = _safe_text(str(project.get("title") or "")).strip(" .:-|")
+    if not title or len(title) > 120:
+        return False
+    lower = title.lower()
+    if lower in {"api", "apis", "conditioning", "github", "repo", "repository", "project", "projects"}:
+        return False
+    return not (URL_RE.search(title) or EMAIL_RE.search(title))
+
+
+def _rank_projects(profile: dict, lead: dict, limit: int = 4) -> list[dict]:
+    jd = " ".join([
+        lead.get("title", ""),
+        lead.get("company", ""),
+        lead.get("description", ""),
+        lead.get("reason", ""),
+        " ".join(lead.get("match_points", []) or []),
+    ])
+    target = _keywords(jd)
+    ranked = []
+    for project in profile.get("projects", []):
+        if not _valid_resume_project(project):
+            continue
+        stack = project.get("stack", [])
+        stack_text = ", ".join(stack) if isinstance(stack, list) else str(stack)
+        text = " ".join([
+            project.get("title", ""),
+            stack_text,
+            project.get("impact", ""),
+        ])
+        tokens = _keywords(text)
+        stack_hits = len(target.intersection(_keywords(stack_text))) * 3
+        score = len(target.intersection(tokens)) + stack_hits
+        ranked.append((score, project))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return [p for idx, (score, p) in enumerate(ranked[:limit]) if p.get("title") and (score > 0 or idx < 2)]
+
+
+def _profile_payload(profile: dict) -> dict:
+    return {
+        "candidate": {"name": profile.get("n", ""), "summary": profile.get("s", "")},
+        "identity": profile.get("identity", {}),
+        "skills": profile.get("skills", []),
+        "experience": profile.get("exp", []),
+        "projects": profile.get("projects", []),
+        "certifications": profile.get("certifications", []) or profile.get("certs", []),
+        "education": profile.get("education", []),
+        "achievements": profile.get("achievements", []),
+    }
+
+
+def _section_body(markdown: str, heading: str) -> str:
+    match = re.search(rf"(?im)^##\s+{re.escape(heading)}\s*$", markdown or "")
+    if not match:
+        return ""
+    tail = markdown[match.end():]
+    end = re.search(r"(?im)^##\s+", tail)
+    return tail[:end.start()] if end else tail
+
+
+def _resume_needs_fallback(markdown: str, lead: dict | None = None) -> bool:
+    text = markdown or ""
+    summary = _section_body(text, "SUMMARY") or _section_body(text, "Summary")
+    lower_summary = summary.lower()
+    if EMAIL_RE.search(summary) or PHONE_RE.search(summary) or URL_RE.search(summary):
+        return True
+    if any(marker in lower_summary for marker in ("email:", "phone:", "links:", "linkedin:", "github:", "targeting ")):
+        return True
+    if re.search(r"(?im)^###\s*(?:api|apis|conditioning|github|repo|repository)\b", text):
+        return True
+    if re.search(r"(?im)^###\s*.*https?://", text):
+        return True
+    if re.search(r"(?i)\b(?:certificate|credential)\s+link\b", text):
+        return True
+    lead_url = str((lead or {}).get("url") or "").strip()
+    return bool(lead_url and lead_url in summary)
+
+
+def _categorize_skills(skills: list[dict]) -> dict[str, list[str]]:
+    """Group skills into categories matching the resume format."""
+    categories: dict[str, list[str]] = {
+        "Languages": [],
+        "Frameworks & Libraries": [],
+        "Databases & Data Tools": [],
+        "Tools & Platforms": [],
+        "Core Concepts": [],
+        "AI Skills": [],
+    }
+    _cat_map = {
+        "language": "Languages", "languages": "Languages", "lang": "Languages",
+        "framework": "Frameworks & Libraries", "frameworks": "Frameworks & Libraries",
+        "library": "Frameworks & Libraries", "libraries": "Frameworks & Libraries",
+        "frontend": "Frameworks & Libraries", "backend": "Frameworks & Libraries",
+        "database": "Databases & Data Tools", "databases": "Databases & Data Tools",
+        "data": "Databases & Data Tools", "db": "Databases & Data Tools",
+        "tool": "Tools & Platforms", "tools": "Tools & Platforms",
+        "platform": "Tools & Platforms", "platforms": "Tools & Platforms",
+        "devops": "Tools & Platforms", "cloud": "Tools & Platforms",
+        "concept": "Core Concepts", "concepts": "Core Concepts",
+        "soft": "Core Concepts",
+        "ai": "AI Skills", "ml": "AI Skills", "machine learning": "AI Skills",
+    }
+    for s in skills:
+        name = s.get("n", "")
+        if not name:
+            continue
+        cat_raw = (s.get("cat", "") or s.get("category", "") or "").lower().strip()
+        target_cat = _cat_map.get(cat_raw, "Tools & Platforms")
+        categories[target_cat].append(name)
+    return {k: v for k, v in categories.items() if v}
+
+
+def _selection_pinned(profile: dict, selection: dict | None) -> tuple[list[dict], list[dict], dict[str, list[dict]], dict[str, list[dict]]] | None:
+    """Rows the user explicitly pinned (picked points or entry toggles), with
+    their picked point texts — used instead of _rank_projects discretion."""
+    if is_empty_selection(selection):
+        return None
+    selection = selection or {}
+    points_on = selection.get("points_on") or []
+    proj_picks = picked_points_by_row(profile.get("projects") or [], points_on, "impact")
+    exp_picks = picked_points_by_row(profile.get("exp") or [], points_on, "d")
+    proj_on = set(selection.get("projects_on") or [])
+    exp_on = set(selection.get("experience_on") or [])
+
+    def pinned(rows: list[dict], picks: dict[str, list[dict]], on: set[str]) -> list[dict]:
+        return [row for row in rows
+                if str(row.get("id") or "") in picks or str(row.get("id") or "") in on]
+
+    projects = pinned([r for r in profile.get("projects", []) if isinstance(r, dict)], proj_picks, proj_on)
+    exp = pinned([r for r in profile.get("exp", []) if isinstance(r, dict)], exp_picks, exp_on)
+    return projects, exp, proj_picks, exp_picks
+
+
+def _fallback_package(profile: dict, lead: dict, template: str = "", selection: dict | None = None, contact_kinds: list[str] | None = None) -> _DocPackage:
+    pinned = _selection_pinned(profile, selection)
+    selected = pinned[0] if pinned and pinned[0] else _rank_projects(profile, lead, limit=2)
+    name = profile.get("n") or "Candidate"
+    identity: dict = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
+    title = _safe_text(_fallback_role(profile, lead)) or "the advertised role"
+    company = _safe_text(str(lead.get("company") or "the company")) or "the company"
+    skills_raw = profile.get("skills", [])
+    education = profile.get("education", [])
+    certs = profile.get("certifications", []) or profile.get("certs", [])
+    achievements = profile.get("achievements", [])
+    jd_terms = _job_keyword_terms(_lead_text(lead))
+    prioritized_skills = _prioritized_skills(profile, lead)
+
+    skill_cats = _categorize_skills([
+        {
+            **skill,
+            "n": skill.get("n") or skill.get("name", ""),
+            "cat": _inferred_skill_category(skill.get("n") or skill.get("name", ""), skill.get("cat", skill.get("category", ""))),
+        }
+        for skill in skills_raw
+        if skill.get("n") or skill.get("name")
+    ])
+    skills_lines = []
+    for cat, items in skill_cats.items():
+        ordered = _compact_list([s for s in prioritized_skills if s in items] + items, 8)
+        if ordered:
+            skills_lines.append(f"**{cat}:** {', '.join(ordered)}")
+    skills_block = "\n".join(skills_lines) if skills_lines else f"**Core:** {', '.join(prioritized_skills[:12])}"
+
+    _, pinned_exp, proj_picks, exp_picks = pinned if pinned else ([], [], {}, {})
+    project_lines = []
+    for p in selected:
+        stack = p.get("stack", [])
+        stack_text = ", ".join(stack) if isinstance(stack, list) else str(stack or "")
+        subtitle_bits = [bit for bit in [", ".join(_compact_list(stack_text.split(","), 3)) if stack_text else ""] if bit]
+        proj_block = f"### {_safe_text(str(p.get('title','Project'))) or 'Project'}"
+        if subtitle_bits:
+            proj_block += f" - {subtitle_bits[0]}"
+        proj_block += "\n"
+        picked_points = proj_picks.get(str(p.get("id") or ""))
+        bullets = (
+            [_clean_sentence(pt["text"]) for pt in picked_points[:3]] if picked_points
+            else _project_bullets(p, lead, jd_terms)[:3]
+        )
+        for bullet in bullets:
+            proj_block += f"- {bullet}\n"
+        project_lines.append(proj_block)
+    if not project_lines:
+        project_lines.append("### Role-Matched Project Evidence\n- Add projects to the Identity Graph for stronger tailoring.")
+
+    exp_lines = []
+    exp_rows = (pinned_exp or profile.get("exp", []))[:2]
+    for e in exp_rows:
+        role = e.get("role", "Role")
+        co = e.get("co", "Company")
+        period = e.get("period", "")
+        exp_block = f"### {role} - {co} {period}\n".strip() + "\n"
+        picked_points = exp_picks.get(str(e.get("id") or ""))
+        bullets = (
+            [_clean_sentence(pt["text"]) for pt in picked_points[:2]] if picked_points
+            else _experience_bullets(e, lead, prioritized_skills)[:2]
+        )
+        for bullet in bullets:
+            exp_block += f"- {bullet}\n"
+        exp_lines.append(exp_block)
+
+    cert_lines = _line_items(certs, 4)
+    achv_lines = _line_items(achievements, 4)
+    edu_lines = _line_items(education, 3)
+
+    contact_parts = []
+    # My-Resume-Maker contact toggles, honored by the deterministic fallback too: only
+    # the listed kinds may appear. None means legacy (everything available).
+    allowed = {str(k).strip().lower() for k in (contact_kinds or [])} or None
+
+    def _allowed(kind: str) -> bool:
+        return allowed is None or kind in allowed
+
+    if identity.get("linkedin_url") and _allowed("linkedin"):
+        contact_parts.append(f"LinkedIn: {identity['linkedin_url']}")
+    if identity.get("email") and _allowed("email"):
+        contact_parts.append(f"Email: {identity['email']}")
+    if identity.get("github_url") and _allowed("github"):
+        contact_parts.append(f"GitHub: {identity['github_url']}")
+    if identity.get("phone") and _allowed("phone"):
+        contact_parts.append(f"Phone: {identity['phone']}")
+
+    resume = f"# {name}\n"
+    if contact_parts:
+        resume += " | ".join(contact_parts[:4]) + "\n"
+    resume += "\n"
+    resume += f"## SKILLS\n{skills_block}\n\n"
+    if exp_lines:
+        resume += f"\n## EXPERIENCE\n{chr(10).join(exp_lines)}\n"
+    resume += f"## PROJECTS\n{chr(10).join(project_lines)}\n"
+    if cert_lines:
+        resume += f"\n## CERTIFICATES\n{cert_lines}\n"
+    if achv_lines:
+        resume += f"\n## ACHIEVEMENTS\n{achv_lines}\n"
+    if edu_lines:
+        resume += f"\n## EDUCATION\n{edu_lines}\n"
+
+    all_skills = prioritized_skills
+    # Field-neutral fallback: no hardcoded "software engineering" / "stack" / "production
+    # systems" language, so a nurse/lawyer/teacher's fallback cover letter reads correctly.
+    background = ", ".join(all_skills[:5]) if all_skills else (_safe_text(str(profile.get("s") or "").strip()) or "this field")
+    recent = ", ".join(p.get("title", "a key project") for p in selected[:3]) if selected else "relevant work in this field"
+    cover = f"""Dear {company} team,
+
+I am writing to apply for the {title} position at {company}. My background in {background} aligns directly with the requirements outlined in your posting.
+
+In my recent work on {recent}, I have built directly relevant experience and a track record of delivering the outcomes your team is looking for.
+
+I would welcome the opportunity to discuss how my experience maps to your needs. Thank you for your consideration.
+
+Sincerely,
+{name}
+"""
+    outreach = _fallback_outreach(profile, lead)
+    return _DocPackage(
+        selected_projects=[p.get("title", "") for p in selected if p.get("title")],
+        resume_markdown=resume,
+        cover_letter_markdown=cover,
+        founder_message=outreach["founder_message"],
+        linkedin_note=outreach["linkedin_note"],
+        cold_email=outreach["cold_email"],
+    )
+
+
+class ResumeGenerator:
+    name = "resume"
+
+    def generate(self, lead: dict, profile: dict, config: dict | None = None) -> GeneratedAsset:
+        template = (config or {}).get("template", "")
+        package = _fallback_package(profile, lead, template)
+        return {"type": self.name, "text": package.resume_markdown}

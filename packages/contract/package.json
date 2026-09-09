@@ -1,0 +1,19 @@
+{
+  "name": "@galaxyhire/contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The job envelope every scraper emits.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

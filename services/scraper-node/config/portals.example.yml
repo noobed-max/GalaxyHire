@@ -1,0 +1,580 @@
+# ============================================================================
+# GalaxyHire portal configuration — career-ops connectors only
+# ============================================================================
+# SHIPPED SEED. The scraper loads `config/portals.yml` first (gitignored — your
+# local customizations live there) and falls back to THIS file, so a fresh
+# checkout scrapes the measured set below with no setup. To customize, copy
+# this file to `portals.yml` in the same directory and edit the copy.
+#
+# Format: career-ops `portals.yml` (its providers were written against these
+# field names — see services/scraper-node/src/config.ts). GalaxyHire adds one
+# namespaced block per entry that no provider reads:
+#
+#   gh:
+#     recency:  strict      — source proves postings are ≤24h (date_posted inside
+#                             the window; undated rows are DROPPED). The deliberate
+#                             inversion of career-ops' "undated always passes".
+#               first_seen  — source publishes no usable date, or refreshes slower
+#                             than a day (the ATS reality: measured 2026-08-27,
+#                             GitLab/Greenhouse 0/220 ≤24h). Novelty = "new to the
+#                             corpus", enforced retrieval-side on first_seen_at.
+#               off         — never scrape (retired feed, bot-walled endpoint).
+#     toggle:   default state of this portal in the UI's per-portal selector.
+#     region:   display grouping only.
+#     timeout_ms: per-portal wall clock (default 45s; pagination hogs raise it).
+#
+# Every recency/toggle value below is MEASURED (MAJOR-CHANGE/04, run 2026-08-27
+# against career-ops 1c866a9), with the ≤24h count as the comment. Endpoints rot:
+# re-run the probe before changing one from memory.
+#
+# Keyword/query injection: vdab, jobbankca, mycareersfuture, arbeitsagentur,
+# wttj, a16z-speedrun-talent, alibaba, meituan, tencent, careerviet, itviec have
+# no keywords in this file ON PURPOSE — src/query-injection.ts fills each
+# provider's own key from the searched role at run time.
+
+job_boards:
+
+  # ── Aggregators proven fresh ≤24h (strict) ──────────────────────────────
+  - name: Arbeitnow
+    provider: arbeitnow
+    gh: { recency: strict, toggle: true, region: eu }        # 205/300 ≤24h
+  - name: Jobicy
+    provider: jobicy
+    gh: { recency: strict, toggle: true, region: remote }    # 50/50 ≤24h
+  - name: Himalayas
+    provider: himalayas
+    gh: { recency: strict, toggle: true, region: remote }    # 20/20 ≤24h
+  - name: JustJoin.it
+    provider: justjoin
+    careers_url: https://justjoin.it/job-offers/all-locations
+    gh: { recency: strict, toggle: true, region: eu }        # 2136/5000 ≤24h — the volume engine
+  - name: Careerviet
+    provider: careerviet
+    gh: { recency: strict, toggle: true, region: sea }       # 100/100 ≤24h (Vietnam)
+  - name: ITviec
+    provider: itviec
+    gh: { recency: strict, toggle: true, region: sea }       # 38/40 ≤24h (Vietnam)
+  - name: Welcome to the Jungle
+    provider: wttj
+    gh: { recency: strict, toggle: true, region: eu }        # 84/100 ≤24h; role injected as wttj.queries
+  - name: 4 Day Week
+    provider: 4dayweek
+    gh: { recency: strict, toggle: true, region: remote }    # 4/75 ≤24h
+  - name: We Work Remotely
+    provider: weworkremotely
+    gh: { recency: strict, toggle: true, region: remote }    # 5/90 ≤24h
+  - name: a16z speedrun talent
+    provider: a16z-speedrun-talent
+    gh: { recency: strict, toggle: true, region: us }        # 8/300 ≤24h; role injected as q
+  - name: Meituan Careers
+    provider: meituan
+    gh: { recency: strict, toggle: true, region: cn }        # 200/200 ≤24h, ships full JD text
+  - name: Alibaba Careers
+    provider: alibaba
+    gh: { recency: strict, toggle: true, region: cn }        # 7/200 ≤24h, ships full JD text
+  - name: MyCareersFuture
+    provider: mycareersfuture
+    gh: { recency: strict, toggle: true, region: sea }       # 4/200 ≤24h; role injected as keywords
+  - name: VDAB
+    provider: vdab
+    gh: { recency: strict, toggle: false, region: eu }       # 6/200 ≤24h; role injected as keywords
+  - name: Tencent Careers
+    provider: tencent
+    gh: { recency: strict, toggle: false, region: cn }       # 1/200 ≤24h; ships full JD text
+  - name: Get on Board
+    provider: getonbrd
+    gh: { recency: strict, toggle: false, region: latam }    # 2/300 ≤24h
+  - name: Joinup
+    provider: joinup
+    gh: { recency: strict, toggle: false, region: eu }       # 2/10 ≤24h
+
+  # ── Dated-but-slow or undated boards, kept honestly as first_seen ───────
+  - name: Hacker News — Who is hiring?
+    provider: hackernews
+    gh: { recency: first_seen, toggle: true, region: us }    # monthly thread: 0/240 ≤24h by design
+  - name: SolidJobs IT
+    provider: solidjobs
+    careers_url: https://solid.jobs/public-api/offers/it?campaign=galaxyhire
+    gh: { recency: first_seen, toggle: true, region: eu }    # no dates; enricher adds JD text + level
+  - name: NoFluffJobs
+    provider: nofluffjobs
+    careers_url: https://nofluffjobs.com/pl
+    gh: { recency: first_seen, toggle: true, region: eu }    # 0/657 ≤24h, 80 ≤72h
+  - name: RemoteOK
+    provider: remoteok
+    gh: { recency: first_seen, toggle: true, region: remote }   # publishes no dates
+  - name: Remotive
+    provider: remotive
+    gh: { recency: first_seen, toggle: true, region: remote }   # no dates, 19 jobs
+  - name: Remotli
+    provider: remotli
+    gh: { recency: first_seen, toggle: true, region: remote }   # 0/100 ≤24h, ships full JD text
+  - name: Cryptocurrency Jobs
+    provider: cryptocurrencyjobs
+    gh: { recency: first_seen, toggle: true, region: web3 }      # 0/75 ≤24h, ships JD text
+  - name: Working Nomads
+    provider: workingnomads
+    gh: { recency: first_seen, toggle: true, region: remote }    # no dates
+  - name: IBM Careers
+    provider: ibm
+    gh: { recency: first_seen, toggle: true, region: global }    # no dates, company single-tenant
+  - name: Landing.jobs
+    provider: landingjobs
+    gh: { recency: first_seen, toggle: true, region: eu }
+  - name: Jobspresso
+    provider: jobspresso
+    gh: { recency: first_seen, toggle: false, region: remote }
+  - name: LaraJobs
+    provider: larajobs
+    gh: { recency: first_seen, toggle: false, region: php }
+  - name: The Muse
+    provider: themuse
+    gh: { recency: first_seen, toggle: false, region: us, timeout_ms: 150000 }  # 119s full crawl, no dates
+  - name: Agentic Engineering Jobs
+    provider: agentic-jobs
+    gh: { recency: first_seen, toggle: false, region: global, timeout_ms: 150000 }  # ~100s crawl, ships JD text
+  - name: Jobstreet / SEEK
+    provider: jobstreet
+    gh: { recency: first_seen, toggle: false, region: sea }       # 0/90 ≤24h in the 2-page window
+  - name: Tower
+    provider: torre
+    gh: { recency: first_seen, toggle: false, region: global }
+  - name: Senjob
+    provider: senjob
+    gh: { recency: first_seen, toggle: false, region: latam }     # company field empty on rows
+  - name: Flowxtra
+    provider: flowxtra
+    gh: { recency: first_seen, toggle: false, region: eu }
+  - name: NoDesk
+    provider: nodesk
+    gh: { recency: first_seen, toggle: false, region: remote }    # location field empty
+  - name: HigherEdJobs
+    provider: higheredjobs
+    gh: { recency: first_seen, toggle: false, region: us }
+  - name: The Hub
+    provider: thehub
+    gh: { recency: first_seen, toggle: false, region: nordics }   # no dates
+  - name: Yourator
+    provider: yourator
+    gh: { recency: first_seen, toggle: false, region: br }        # no dates
+  - name: getManfred
+    provider: manfred
+    gh: { recency: first_seen, toggle: false, region: eu }        # no dates
+  - name: Arbeitsagentur
+    provider: arbeitsagentur
+    gh: { recency: first_seen, toggle: false, region: de }        # no dates; role injected as keywords
+  - name: Job Bank Canada
+    provider: jobbankca
+    gh: { recency: first_seen, toggle: false, region: ca, timeout_ms: 120000 }  # honors Crawl-delay 5s
+
+  # ── Known broken, kept visible so nobody re-enables them by accident ────
+  - name: EchoJobs
+    provider: echojobs
+    gh: { recency: "off", toggle: false, note: "retired upstream #2976 — feed behind bot protection" }
+  - name: Glints
+    provider: glints
+    gh: { recency: "off", toggle: false, note: "HTTP 403 bot wall measured 2026-08-27" }
+
+# tracked_companies below were carried over from the curated seed (slugs probed
+# working when it was cut). Every one runs as first_seen: ATS boards publish a
+# real date for new reqs but rarely refresh within 24h, so strict would empty
+# this whole section (measured: 0/220 GitLab, 0/758 OpenAI, 1/574 Stripe ≤24h),
+# while first_seen still contributes only postings new to the corpus.
+
+# GalaxyHire portal configuration — tracked companies (career-ops ATS format)
+# gh blocks added mechanically; see header in job_boards for policy semantics.
+tracked_companies:
+  - name: Anthropic
+    careers_url: https://job-boards.greenhouse.io/anthropic
+    api: https://boards-api.greenhouse.io/v1/boards/anthropic/jobs
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: PolyAI
+    careers_url: https://job-boards.eu.greenhouse.io/polyai
+    api: https://boards-api.greenhouse.io/v1/boards/polyai/jobs
+    notes: UK. Voice AI for enterprise contact centers.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Parloa
+    careers_url: https://job-boards.eu.greenhouse.io/parloa
+    api: https://boards-api.greenhouse.io/v1/boards/parloa/jobs
+    notes: Berlin EMEA. Voice AI enterprise.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Intercom
+    careers_url: https://job-boards.greenhouse.io/intercom
+    api: https://boards-api.greenhouse.io/v1/boards/intercom/jobs
+    notes: Dublin EMEA. Fin AI agent.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Hume AI
+    careers_url: https://job-boards.greenhouse.io/humeai
+    api: https://boards-api.greenhouse.io/v1/boards/humeai/jobs
+    notes: NYC. Empathic voice AI.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Retool
+    careers_url: https://jobs.gem.com/retool
+    provider: gem
+    notes: London. Popularized Deployed Engineer role.
+    gh:
+      recency: first_seen
+      toggle: false
+  - name: Airtable
+    careers_url: https://job-boards.greenhouse.io/airtable
+    api: https://boards-api.greenhouse.io/v1/boards/airtable/jobs
+    notes: No-code + AI platform.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Vercel
+    careers_url: https://job-boards.greenhouse.io/vercel
+    api: https://boards-api.greenhouse.io/v1/boards/vercel/jobs
+    notes: AI SDK, v0.dev. Frontend AI tooling.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Temporal
+    careers_url: https://job-boards.greenhouse.io/temporal
+    api: https://boards-api.greenhouse.io/v1/boards/temporal/jobs
+    notes: Workflow orchestration.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Arize AI
+    careers_url: https://job-boards.greenhouse.io/arizeai
+    api: https://boards-api.greenhouse.io/v1/boards/arizeai/jobs
+    notes: LLMOps / AI observability.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: RunPod
+    careers_url: https://job-boards.greenhouse.io/runpod
+    api: https://boards-api.greenhouse.io/v1/boards/runpod/jobs
+    notes: GPU cloud for AI.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Weights & Biases (CoreWeave)
+    careers_url: https://job-boards.greenhouse.io/coreweave
+    api: https://boards-api.greenhouse.io/v1/boards/coreweave/jobs
+    notes: Acquired by CoreWeave (announced March 2025, closed May 2025). W&B roles now live on CoreWeave's
+      Greenhouse board. Old Lever URL (jobs.lever.co/wandb) returns 404.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Glean
+    careers_url: https://job-boards.greenhouse.io/gleanwork
+    api: https://boards-api.greenhouse.io/v1/boards/gleanwork/jobs
+    notes: Enterprise AI search.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Speechmatics
+    careers_url: https://job-boards.greenhouse.io/speechmatics
+    api: https://boards-api.greenhouse.io/v1/boards/speechmatics/jobs
+    notes: Cambridge UK. Speech recognition platform.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Boomi
+    careers_url: https://job-boards.greenhouse.io/boomilp
+    api: https://boards-api.greenhouse.io/v1/boards/boomilp/jobs
+    notes: Integration and automation platform.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Cohere
+    careers_url: https://jobs.ashbyhq.com/cohere
+    notes: AI/LLM provider. Toronto + remote.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: ashby
+  - name: LangChain
+    careers_url: https://jobs.ashbyhq.com/langchain
+    notes: LangChain/LangSmith framework.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: ashby
+  - name: Pinecone
+    careers_url: https://jobs.ashbyhq.com/pinecone
+    notes: Vector database.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: ashby
+  - name: Mistral AI
+    careers_url: https://jobs.lever.co/mistral
+    notes: Paris. European AI lab.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: lever
+  - name: Palantir
+    careers_url: https://jobs.lever.co/palantir
+    notes: FDE roles. Mostly US/London.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: lever
+  - name: Later
+    careers_url: https://job-boards.greenhouse.io/later
+    api: https://boards-api.greenhouse.io/v1/boards/later/jobs
+    notes: Vancouver/Toronto. Social media and creator platform.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Safari AI
+    careers_url: https://job-boards.greenhouse.io/safariai
+    api: https://boards-api.greenhouse.io/v1/boards/safariai/jobs
+    notes: Miami HQ / Vancouver engineering. Computer vision AI for operations in the physical economy.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Hootsuite
+    careers_url: https://job-boards.greenhouse.io/hootsuite
+    api: https://boards-api.greenhouse.io/v1/boards/hootsuite/jobs
+    notes: Vancouver. Social media management platform.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Klue
+    careers_url: https://jobs.ashbyhq.com/klue
+    notes: Vancouver. Competitive intelligence SaaS.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: ashby
+  - name: Glacis AI
+    careers_url: https://jobs.ashbyhq.com/glacis-ai
+    notes: Ho Chi Minh City. AI agents for supply chain and logistics workflows.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: ashby
+  - name: Sanctuary AI
+    careers_url: https://jobs.lever.co/sanctuary
+    notes: Vancouver. Humanoid robotics and embodied AI.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: lever
+  - name: Black Forest Labs
+    careers_url: https://job-boards.greenhouse.io/blackforestlabs
+    api: https://boards-api.greenhouse.io/v1/boards/blackforestlabs/jobs
+    notes: Freiburg DE / SF. FLUX image models, ex-Stable Diffusion team.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Helsing
+    careers_url: https://job-boards.greenhouse.io/helsing
+    api: https://boards-api.greenhouse.io/v1/boards/helsing/jobs
+    notes: Munich / Berlin / London / Paris. Defence AI unicorn. 100+ roles, ML & FDE.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Celonis
+    careers_url: https://job-boards.greenhouse.io/celonis
+    api: https://boards-api.greenhouse.io/v1/boards/celonis/jobs
+    notes: Munich / NYC. Process intelligence, Applied AI Engineer roles, Field CTOs.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Contentful
+    careers_url: https://job-boards.greenhouse.io/contentful
+    api: https://boards-api.greenhouse.io/v1/boards/contentful/jobs
+    notes: Berlin / Denver. Headless CMS, AI content workflows.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: GetYourGuide
+    careers_url: https://job-boards.greenhouse.io/getyourguide
+    api: https://boards-api.greenhouse.io/v1/boards/getyourguide/jobs
+    notes: Berlin. Travel marketplace, ML & data platform roles.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: HelloFresh
+    careers_url: https://job-boards.greenhouse.io/hellofresh
+    api: https://boards-api.greenhouse.io/v1/boards/hellofresh/jobs
+    notes: Berlin. Meal kit unicorn, large data/ML org.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: N26
+    careers_url: https://job-boards.greenhouse.io/n26
+    api: https://boards-api.greenhouse.io/v1/boards/n26/jobs
+    notes: Berlin / Barcelona. Mobile bank, ~50 roles, ML & risk.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Trade Republic
+    careers_url: https://job-boards.greenhouse.io/traderepublicbank
+    api: https://boards-api.greenhouse.io/v1/boards/traderepublicbank/jobs
+    notes: Berlin / London / Paris. Neobroker, ~50 roles, platform & data.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: SumUp
+    careers_url: https://job-boards.greenhouse.io/sumup
+    api: https://boards-api.greenhouse.io/v1/boards/sumup/jobs
+    notes: Berlin / London. Payments fintech, EU + LATAM hiring.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Qonto
+    careers_url: https://jobs.lever.co/qonto
+    notes: Paris / Berlin / Barcelona / Milan. SMB neobank, MLOps for AI Product roles.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: lever
+  - name: Forto
+    careers_url: https://jobs.lever.co/forto
+    notes: Berlin DE. Digital freight forwarder, product & data roles, German + English.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: lever
+  - name: Scandit
+    careers_url: https://job-boards.greenhouse.io/scandit
+    api: https://boards-api.greenhouse.io/v1/boards/scandit/jobs
+    notes: Zurich CH. Computer vision / smart data capture, ML roles.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Pigment
+    careers_url: https://jobs.lever.co/pigment
+    notes: Paris FR / NYC / London. AI-powered FP&A planning platform.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: lever
+  - name: Diabolocom
+    careers_url: https://jobs.eu.lever.co/diabolocom
+    notes: Paris FR. AI-native contact center (CCaaS) platform — Frost & Sullivan 2026 AI CX Leader in Europe;
+      hybrid LLM/SLM architecture powering Agent Assist, Voice Analytics, and automated QA.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: lever
+  - name: Wayve
+    careers_url: https://job-boards.greenhouse.io/wayve
+    api: https://boards-api.greenhouse.io/v1/boards/wayve/jobs
+    notes: London UK. Embodied AI for self-driving, ML & robotics roles.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Isomorphic Labs
+    careers_url: https://job-boards.greenhouse.io/isomorphiclabs
+    api: https://boards-api.greenhouse.io/v1/boards/isomorphiclabs/jobs
+    notes: London / Lausanne / Cambridge MA. DeepMind spin-out for drug discovery AI.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: PhysicsX
+    careers_url: https://job-boards.greenhouse.io/physicsx
+    api: https://boards-api.greenhouse.io/v1/boards/physicsx/jobs
+    notes: London UK. Physics-informed ML for engineering, ~40 roles.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Stability AI
+    careers_url: https://job-boards.greenhouse.io/stabilityai
+    api: https://boards-api.greenhouse.io/v1/boards/stabilityai/jobs
+    notes: London / SF. Generative AI image/video research lab.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Spotify
+    careers_url: https://jobs.lever.co/spotify
+    notes: Stockholm SE / NYC / London. Audio platform, large ML/personalization org.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: lever
+  - name: Vinted
+    careers_url: https://jobs.lever.co/vinted
+    notes: Vilnius LT / Berlin. C2C marketplace unicorn, data science & ML roles.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: lever
+  - name: Templafy
+    careers_url: https://job-boards.greenhouse.io/templafy
+    api: https://boards-api.greenhouse.io/v1/boards/templafy/jobs
+    notes: Copenhagen DK. Document-generation / content-enablement platform.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Amplemarket
+    careers_url: https://job-boards.greenhouse.io/amplemarket
+    api: https://boards-api.greenhouse.io/v1/boards/amplemarket/jobs
+    notes: Lisbon PT / Remote. AI-native sales platform.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Runway
+    careers_url: https://job-boards.greenhouse.io/runwayml
+    api: https://boards-api.greenhouse.io/v1/boards/runwayml/jobs
+    notes: Generative AI video and creative tooling platform.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: Hightouch
+    careers_url: https://job-boards.greenhouse.io/hightouch
+    api: https://boards-api.greenhouse.io/v1/boards/hightouch/jobs
+    notes: Data activation platform with AI agents and solutions engineering roles.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse
+  - name: PlanetScale
+    careers_url: https://job-boards.greenhouse.io/planetscale
+    api: https://boards-api.greenhouse.io/v1/boards/planetscale/jobs
+    notes: Serverless MySQL platform. Customer Engineering, Engineering, Sales.
+    gh:
+      recency: first_seen
+      toggle: false
+    provider: greenhouse

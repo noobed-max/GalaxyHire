@@ -1,0 +1,24 @@
+{
+  "name": "@galaxyhire/scraper-node",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hosts the career-ops job providers in their native runtime and posts envelopes to the corpus.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "probe": "tsx src/probe.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit"
+  },
+  "//": "dependencies are pinned to what the code actually imports (verified 2026-08-30, after the ever-jobs deletion): `yaml` is our config loader's parser; `js-yaml` is imported by the vendored career-ops helper `_profile-keywords.mjs` and must match career-ops' own choice. The NestJS/class-validator/playwright/turndown/exa stack that used to live here served only the ever-jobs connectors.",
+  "dependencies": {
+    "js-yaml": "^4.3.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

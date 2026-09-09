@@ -1,0 +1,52 @@
+{
+  "$comment": "JustHireMe profile import format. Remove $comment keys before importing.",
+  "candidate": {
+    "name": "Your Full Name",
+    "summary": "2–4 sentence professional summary."
+  },
+  "identity": {
+    "email":        "you@example.com",
+    "phone":        "+1 555 000 0000",
+    "linkedin_url": "https://linkedin.com/in/yourhandle",
+    "github_url":   "https://github.com/yourhandle",
+    "website_url":  "https://yoursite.com",
+    "city":         "San Francisco, CA"
+  },
+  "skills": [
+    { "name": "Python",    "category": "language"  },
+    { "name": "React",     "category": "frontend"  },
+    { "name": "FastAPI",   "category": "backend"   },
+    { "name": "LangGraph", "category": "ai"        }
+  ],
+  "experience": [
+    {
+      "role":        "Software Engineer",
+      "company":     "Acme Corp",
+      "period":      "Jan 2023 – Present",
+      "description": "Led migration to FastAPI + LangGraph. Reduced p99 latency 40%."
+    }
+  ],
+  "projects": [
+    {
+      "title":  "JustHireMe",
+      "stack":  "Tauri, React, Python, FastAPI, Kùzu",
+      "repo":   "https://github.com/yourhandle/justhireme",
+      "impact": "Local-first autonomous job application engine."
+    }
+  ],
+  "education": [
+    {
+      "title": "B.Tech Computer Science · Delhi Technological University (2021–2025)"
+    }
+  ],
+  "certifications": [
+    {
+      "title": "AWS Certified Solutions Architect — Amazon (2024)"
+    }
+  ],
+  "achievements": [
+    {
+      "title": "Winner — Smart India Hackathon 2023"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+ALTER TABLE leads ADD COLUMN feedback TEXT DEFAULT '';
+ALTER TABLE leads ADD COLUMN feedback_note TEXT DEFAULT '';
+ALTER TABLE leads ADD COLUMN followup_due_at TEXT DEFAULT '';
+ALTER TABLE leads ADD COLUMN last_contacted_at TEXT DEFAULT '';
+ALTER TABLE leads ADD COLUMN learning_delta INTEGER DEFAULT 0;
+ALTER TABLE leads ADD COLUMN learning_reason TEXT DEFAULT '';
+

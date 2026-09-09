@@ -1,0 +1,56 @@
+# Infrastructure only.
+#
+# Deliberately just Postgres + Redis: the two app services (apps/api, services/corpus) run
+# natively via uv during development. Containerising them would mean building images that carry
+# kuzu + lancedb + onnxruntime + playwright, which is slow to iterate on and buys nothing locally.
+# Production images are a separate concern (see docs/DEPLOY.md when it exists).
+#
+#   make infra-up      start these
+#   make migrate       apply corpus schema
+#   make dev           run api + corpus + web natively
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: galaxyhire-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: galaxy
+      POSTGRES_PASSWORD: galaxy
+      POSTGRES_DB: galaxy
+    ports:
+      # host 5433 so it never collides with a system Postgres on 5432
+      - "5433:5432"
+    volumes:
+      # A named volume — deliberately, and do not switch it to a bind mount under this repo.
+      #
+      # The tempting "keep the data next to the code" change is `./.data/postgres:/var/...`. It
+      # does not work here: this checkout sits on an NTFS (fuseblk) partition, which cannot
+      # represent Unix ownership, so every file reports uid 1000 whatever wrote it and Postgres
+      # aborts with `data directory "..." has wrong ownership`. ntfs-3g also gives no dependable
+      # fsync or hardlink semantics, so the database would be unsafe even if it started.
+      #
+      # The named volume is already on the large disk anyway — check `docker info | grep 'Root Dir'`
+      # rather than assuming /var/lib/docker. Docker's data root can be relocated to an ext4 image
+      # on the big partition, which keeps full POSIX semantics while costing the root disk nothing.
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U galaxy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: galaxyhire-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
