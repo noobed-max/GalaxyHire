@@ -33,6 +33,7 @@ async def search(
     sort: str = "relevance",
     seen_after: str | None = None,
     fresh_hours: int | None = None,
+    observed_after: str | None = None,
 ) -> list[RankedJob]:
     profile = await ProfileStore().get(user_id) if user_id else None
     preference = await load_preference(user_id)
@@ -52,6 +53,7 @@ async def search(
         limit=limit,
         seen_after=seen_after,
         fresh_hours=fresh_hours,
+        observed_after=observed_after,
     )
     ordered_ids, row_map = await retrieve(compiled)
     return rank(compiled, ordered_ids, row_map, profile, sort=sort)

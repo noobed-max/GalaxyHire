@@ -14,6 +14,7 @@ portal-selection freshness rule instead.)
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
@@ -122,6 +123,49 @@ class TestPortalSetFreshness:
         assert _portals_cover(None, None) is False
 
 
+class TestFreshnessRequiresCompletion:
+    """A stopped run must never satisfy freshness (fail-closed rule for partial coverage).
+
+    Freshness means "this exact question was answered in full recently". A run the user stopped
+    covered an unknown subset of the portals it recorded, so counting it as fresh would suppress
+    the collection that completes the job — for the next 24 hours, with the UI reporting the
+    question as already answered.
+    """
+
+    def _capture_query(self, monkeypatch) -> list[str]:
+        captured: list[str] = []
+
+        class Mappings:
+            def all(self):
+                return []
+
+        class Result:
+            def mappings(self):
+                return Mappings()
+
+        class Session:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            async def execute(self, statement, params=None):
+                captured.append(str(statement))
+                return Result()
+
+        monkeypatch.setattr(runner, "get_sessionmaker", lambda: Session)
+        return captured
+
+    def test_freshness_query_only_accepts_completed_runs(self, monkeypatch):
+        captured = self._capture_query(monkeypatch)
+        fresh = asyncio.run(runner.freshly_scraped("software engineer", portals=("arbeitnow",)))
+        assert fresh is False
+        assert captured, "freshness must consult scrape_runs"
+        assert "status = 'done'" in captured[0]
+        assert "stopped" not in captured[0]
+
+
 @pytest.mark.asyncio
 async def test_clear_history_stops_collection_and_deletes_only_run_metadata(monkeypatch):
     calls: list[str] = []
@@ -214,8 +258,11 @@ class TestSpawnContract:
         from galaxy.scrape import runner as mod
 
         start_src = inspect.getsource(mod.start)
-        assert 'shutil.which("npm")' in start_src
-        assert "SCRAPER_NPM" in start_src
+        resolver_src = inspect.getsource(mod._resolve_npm)
+        assert "_resolve_npm()" in start_src
+        assert 'shutil.which("npm")' in resolver_src
+        assert "SCRAPER_NPM" in resolver_src
+        assert ".nvm/versions/node" in resolver_src
         assert "status = 'failed'" in start_src
         reconcile_src = inspect.getsource(mod._reconcile)
         assert "spawn never recorded a pid" in reconcile_src

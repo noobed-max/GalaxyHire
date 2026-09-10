@@ -243,6 +243,13 @@ class TestSearch:
         assert call["remote"] is True
         assert call["location"] == "Berlin"
 
+    @pytest.mark.asyncio
+    async def test_forwards_current_collection_boundary_to_corpus(self):
+        client = FakeClient([])
+        svc = CorpusDiscoveryService(client, FakeRanking())
+        await svc.search(query="swe", rerank=False, observed_after="2026-09-09T10:00:00+00:00")
+        assert client.search_calls[0]["observed_after"] == "2026-09-09T10:00:00+00:00"
+
 
 class TestDegradation:
     @pytest.mark.asyncio
@@ -587,24 +594,28 @@ class TestPortalResolution:
         portals, err = self._resolve(None, cfg)
         assert err is None and portals == ["arbeitnow"]
 
-    def test_saved_map_missing_keys_follow_catalog_defaults(self):
+    def test_saved_map_missing_keys_enable_new_selectable_portals(self):
         # A map written when the catalog was smaller (or a hand-written partial) does not vote
         # on the portals it never mentions — the catalog default does. Without this a stale
         # partial map silently narrows every search while the UI shows the defaults as on.
         cfg = {"scrape_portals": json.dumps({"arbeitnow": True})}
         portals, err = self._resolve(None, cfg)
-        assert err is None and portals == ["arbeitnow", "jobicy"]
+        assert err is None and portals == ["arbeitnow", "jobicy", "themuse"]
 
     def test_saved_map_stale_keys_are_ignored_not_fatal(self):
         cfg = {"scrape_portals": json.dumps({"arbeitnow": True, "ghostboard": True})}
         portals, err = self._resolve(None, cfg)
-        assert err is None and portals == ["arbeitnow", "jobicy"]
+        assert err is None and portals == ["arbeitnow", "jobicy", "themuse"]
 
-    def test_no_saved_map_falls_back_to_catalog_defaults(self):
+    def test_no_saved_map_uses_all_selectable_portals(self):
         # Resolved to an explicit list rather than None: the run must RECORD the set it covered,
         # or the superset freshness rule has nothing to compare.
         portals, err = self._resolve(None, {})
-        assert err is None and portals == ["arbeitnow", "jobicy"]
+        assert err is None and portals == ["arbeitnow", "jobicy", "themuse"]
+
+    def test_empty_saved_map_uses_all_selectable_portals(self):
+        portals, err = self._resolve(None, {"scrape_portals": "{}"})
+        assert err is None and portals == ["arbeitnow", "jobicy", "themuse"]
 
     def test_corrupt_saved_map_says_so(self):
         portals, err = self._resolve(None, {"scrape_portals": "not-json{"})

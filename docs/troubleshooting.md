@@ -27,6 +27,8 @@ If a port is already in use, stop the previous GalaxyHire process or choose a di
 
 Confirm that a role is saved on Home, the enabled source portals are not all disabled, and the corpus service is running. Use the Activity log to distinguish an empty source from a scraper or network failure. Search again to start a fresh collection.
 
+If Activity says npm could not be found, install Node.js/npm or set `SCRAPER_NPM` to the absolute npm executable before starting GalaxyHire. The runner detects common nvm, Volta, mise, and asdf installations automatically, but a custom service environment may still need the explicit path.
+
 Some sources do not publish a job inside every time window. Try a broader role or location, then remove overly narrow filters in Find jobs.
 
 ## Résumé parsing is slow or appears stuck

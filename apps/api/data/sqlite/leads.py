@@ -341,17 +341,26 @@ def retire_stale_discovery_leads(
     """Archive stale, unengaged rows superseded by a completed fresh scrape.
 
     Exact safety policy: only rows with ``status='discovered'``, empty feedback, a matching
-    ``discovery_scope`` query/location, a scope whose portals are covered by this run, and a
-    ``created_at`` older than ``max_age_days`` are eligible.  A fresh canonical ID or normalized
+    ``discovery_scope`` query/location, a non-empty recorded portal scope that is fully covered
+    by this run's resolved portal set, and a ``created_at`` older than ``max_age_days`` are
+    eligible.  Unknown coverage retires nothing: a run without a resolved portal set (the catalog
+    was unavailable) may have asked only boards the old rows never came from, and a row whose
+    scope records no portals cannot be proven superseded.  A fresh canonical ID or normalized
     source URL protects a row from retirement.  Retirement is a status transition to
     ``discarded`` (plus an audit event and metadata marker), never a hard delete.  Rows without
     scope metadata and every engaged/application state are intentionally untouched.
     """
+    policy_days = max(1, int(max_age_days or DISCOVERY_RETIRE_AFTER_DAYS))
     requested_query = " ".join(str(query or "").split()).casefold()
     requested_location = " ".join(str(location or "").split()).casefold()
     requested_portals = {str(p).strip() for p in (portals or []) if str(p).strip()}
+    if not requested_portals:
+        # Fail closed before touching the database. "No resolved portal set" means coverage is
+        # unknown, not unlimited: treating unknown as everything is how a run that asked 3 boards
+        # archives rows discovered by 40.
+        return {"retired": 0, "items": [], "policy_days": policy_days}
     fresh_ids, fresh_urls = _identity_sets(fresh_leads or [])
-    cutoff = datetime.now(UTC) - timedelta(days=max(1, int(max_age_days or DISCOVERY_RETIRE_AFTER_DAYS)))
+    cutoff = datetime.now(UTC) - timedelta(days=policy_days)
 
     conn = get_connection(db_path)
     retired: list[dict] = []
@@ -372,7 +381,9 @@ def retire_stale_discovery_leads(
             if _scope_value(scope, "query") != requested_query or _scope_value(scope, "location") != requested_location:
                 continue
             old_portals = {str(p).strip() for p in (scope.get("portals") or []) if str(p).strip()}
-            if requested_portals and old_portals and not old_portals.issubset(requested_portals):
+            # The row is only superseded when every board it was discovered from is covered by
+            # this run. A scope that recorded no portals cannot prove coverage, so it is kept.
+            if not old_portals or not old_portals.issubset(requested_portals):
                 continue
             canonical_id, source_url = _lead_identity(lead)
             if (canonical_id and canonical_id in fresh_ids) or (source_url and source_url in fresh_urls):
@@ -392,7 +403,7 @@ def retire_stale_discovery_leads(
         conn.commit()
     finally:
         conn.close()
-    return {"retired": len(retired), "items": retired, "policy_days": max(1, int(max_age_days or DISCOVERY_RETIRE_AFTER_DAYS))}
+    return {"retired": len(retired), "items": retired, "policy_days": policy_days}
 
 
 def update_lead_description(job_id: str, description: str, db_path: str = DEFAULT_DB_PATH) -> dict | None:

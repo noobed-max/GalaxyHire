@@ -102,6 +102,7 @@ class CorpusClient:
         limit: int = 50,
         sort: str = "relevance",
         fresh_hours: int | None = None,
+        observed_after: str | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieve candidates from the stored corpus.
 
@@ -125,6 +126,9 @@ class CorpusClient:
             "limit": limit,
             "sort": sort,
             "fresh_hours": fresh_hours,
+            # When a user explicitly starts a new collection, restrict retrieval to canonical
+            # jobs observed by that run so older corpus rows cannot masquerade as fresh results.
+            "observed_after": observed_after,
         }
         body = await self._post("/search", payload)
         return body.get("results", [])

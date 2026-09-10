@@ -195,6 +195,12 @@ def _hard_filters(compiled: CompiledQuery, version: str) -> tuple[str, dict]:
         clauses.append("first_seen_at >= :seen_after")
         params["seen_after"] = datetime.fromisoformat(compiled.seen_after)  # asyncpg wants a datetime
 
+    # A fresh dashboard collection may update an existing canonical job rather than create a new
+    # row. Filter by last_seen_at for that run so retrieval cannot fall back to yesterday's rows.
+    if compiled.observed_after:
+        clauses.append("last_seen_at >= :observed_after")
+        params["observed_after"] = datetime.fromisoformat(compiled.observed_after)
+
     # Product recency window (R3, MAJOR-CHANGE/05 §3 P2). Two arms, deliberately asymmetric:
     #   date_posted inside the window           — the SOURCE proves the posting is fresh
     #   no source date + first_seen inside it   — "new to us", the honest fallback for the
@@ -204,7 +210,13 @@ def _hard_filters(compiled: CompiledQuery, version: str) -> tuple[str, dict]:
     # sighting is the strongest freshness claim available for them — and the ranker labels which
     # arm produced each row (`RankedJob.freshness`, from date_posted nullness against this same
     # window) so the UI badges "posted <24h" and "new to us" as the different claims they are.
-    if compiled.fresh_hours:
+    # A successful explicit scrape has already applied each source's recency
+    # policy and proves the listing was reachable in this run. Do not also
+    # require an older canonical row to have been *first* seen today: that
+    # would hide still-live, re-observed listings and make a 29-observation
+    # collection return an empty page. Background corpus searches without a
+    # run boundary keep the normal date/first-seen freshness window.
+    elif compiled.fresh_hours:
         clauses.append(
             "(date_posted >= now() - make_interval(hours => :fresh_hours)"
             " OR (date_posted IS NULL AND first_seen_at >= now() - make_interval(hours => :fresh_hours)))"

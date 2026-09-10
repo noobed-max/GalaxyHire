@@ -4,6 +4,8 @@
 
 Home stores the role and location preferences used by discovery. Enter a natural-language role such as `backend engineer` and optionally set a country and city. Choose **Find jobs** to start a fresh collection from the enabled sources.
 
+On a new installation, every currently selectable portal starts enabled. Use **Sources** to turn individual portals off; retired or unsupported catalog entries are not selectable. A dashboard Find action returns only jobs observed by that collection. If the scraper cannot start or finish, GalaxyHire shows the failure instead of substituting older stored jobs.
+
 Open **Find jobs** to review the result tabs:
 
 - **All jobs** shows the current saved set.

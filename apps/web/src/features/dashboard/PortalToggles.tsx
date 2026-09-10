@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Icon from "../../shared/components/Icon";
-import { discoveryApi, type PortalSource } from "../../api/discovery";
+import { discoveryApi, isSelectablePortal, portalEnabled, selectablePortals, type PortalSource } from "../../api/discovery";
 import type { ApiFetch } from "../../types";
 
 /**
@@ -97,16 +97,14 @@ export function PortalToggles({ api, onEnabledChange, onSelectionChange }: {
     return () => { alive = false; };
   }, [api]);
 
-  const enabledFor = useCallback((s: PortalSource) =>
-    // A portal added to the config after this map was saved was never voted on — it follows
-    // the catalog default, so newly-added boards join the selection instead of silently
-    // sitting off until the user happens to toggle something.
-    saved ? (saved[s.id] ?? s.default_enabled) : s.default_enabled, [saved]);
+  const enabledFor = useCallback((s: PortalSource) => portalEnabled(s, saved), [saved]);
 
   const enabledIds = useMemo(
-    () => sources.filter(enabledFor).map(s => s.id),
+    () => selectablePortals(sources).filter(enabledFor).map(s => s.id),
     [sources, enabledFor],
   );
+
+  const selectable = useMemo(() => selectablePortals(sources), [sources]);
 
   const enabledSet = useMemo(() => new Set(enabledIds), [enabledIds]);
 
@@ -115,8 +113,8 @@ export function PortalToggles({ api, onEnabledChange, onSelectionChange }: {
   }, [enabledSet, onEnabledChange]);
 
   useEffect(() => {
-    onSelectionChange?.(saved === null ? null : enabledIds);
-  }, [enabledIds, saved, onSelectionChange]);
+    onSelectionChange?.(sources.length === 0 ? null : enabledIds);
+  }, [enabledIds, sources.length, onSelectionChange]);
 
   const persist = useCallback((next: Record<string, boolean>) => {
     if (!api) return;
@@ -136,13 +134,13 @@ export function PortalToggles({ api, onEnabledChange, onSelectionChange }: {
    *  silently drop the other entries from the saved map. */
   const fullMap = useCallback((overrides: Record<string, boolean> = {}) => {
     const base: Record<string, boolean> = {};
-    for (const s of sources) base[s.id] = enabledFor(s);
+    for (const s of selectable) base[s.id] = enabledFor(s);
     return { ...base, ...overrides };
-  }, [sources, enabledFor]);
+  }, [selectable, enabledFor]);
 
   const toggle = (s: PortalSource) => persist(fullMap({ [s.id]: !enabledFor(s) }));
   const setAll = (on: boolean) => persist(fullMap(
-    Object.fromEntries(visible(sources).map(s => [s.id, on && s.recency_policy !== "off"])) as Record<string, boolean>,
+    Object.fromEntries(visible(selectable).map(s => [s.id, on])) as Record<string, boolean>,
   ));
 
   const q = filter.trim().toLowerCase();
@@ -155,7 +153,7 @@ export function PortalToggles({ api, onEnabledChange, onSelectionChange }: {
 
   const renderRow = (s: PortalSource) => {
     const on = enabledSet.has(s.id);
-    const dead = s.recency_policy === "off";
+    const dead = !isSelectablePortal(s);
     const badge = policyBadge(s);
     return (
       <div className="gh-port-row" key={s.id}>
@@ -180,7 +178,7 @@ export function PortalToggles({ api, onEnabledChange, onSelectionChange }: {
           <span className="gh-kicker">Sources</span>
           <h3>Job portals</h3>
         </div>
-        <span className="gh-ports-count">{enabledSet.size}/{sources.length || "…"}</span>
+        <span className="gh-ports-count">{enabledSet.size}/{selectable.length || "…"}</span>
       </div>
       <div className="gh-ports-tools">
         <label className="gh-ports-search">
