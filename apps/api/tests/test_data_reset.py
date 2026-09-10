@@ -156,3 +156,61 @@ def test_reset_data_body_requires_explicit_confirm():
         ResetDataBody(confirm="yes")
     with pytest.raises(ValidationError):
         ResetDataBody(confirm="DELETE", surprise=True)
+
+
+def test_full_reset_purges_the_corpus_while_data_reset_only_clears_history(monkeypatch):
+    """The Danger-zone checkbox must actually delete the stored scraped jobs.
+
+    Data-only resets keep the reusable corpus by design; the full factory reset must call the
+    corpus purge (canonical jobs included), or "Delete everything" leaves hundreds of jobs behind.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    import api.routers.settings as settings_module
+
+    calls: dict[str, int] = {}
+
+    class FakeTasks:
+        async def stop(self, _name):
+            return False
+
+        async def join(self, _name):
+            return None
+
+    class FakeCorpus:
+        async def purge_corpus(self):
+            calls["purge"] = calls.get("purge", 0) + 1
+            return {"available": True, "purged": {"canonical_jobs": 759}, "stopped": False}
+
+        async def scrape_clear_history(self):
+            calls["history"] = calls.get("history", 0) + 1
+            return {"available": True, "cleared": 1, "stopped": False}
+
+    monkeypatch.setattr(settings_module, "search_tasks", FakeTasks())
+    monkeypatch.setattr(settings_module, "get_corpus_discovery_service", lambda: FakeCorpus())
+    monkeypatch.setattr(
+        "data.maintenance.reset_all_data",
+        lambda *, clear_settings=False: {
+            "sqlite_cleared": [], "errors": [], "settings_cleared": clear_settings,
+        },
+    )
+    monkeypatch.setattr("llm.client.reset_client_cache", lambda: None)
+
+    app = FastAPI()
+    app.include_router(settings_module.create_router(None, None))
+    client = TestClient(app)
+
+    data_only = client.post("/api/v1/data/reset", json={"confirm": "DELETE"})
+    assert data_only.status_code == 200
+    data_summary = data_only.json()["summary"]
+    assert data_summary["scrape_history"] == {"available": True, "cleared": 1, "stopped": False}
+    assert "corpus_purged" not in data_summary
+    assert calls == {"history": 1}
+
+    full = client.post("/api/v1/data/reset", json={"confirm": "DELETE", "clear_settings": True})
+    assert full.status_code == 200
+    full_summary = full.json()["summary"]
+    assert full_summary["corpus_purged"]["purged"]["canonical_jobs"] == 759
+    assert "scrape_history" not in full_summary
+    assert calls == {"history": 1, "purge": 1}

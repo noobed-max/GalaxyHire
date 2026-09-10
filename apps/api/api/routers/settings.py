@@ -725,7 +725,13 @@ def create_router(scheduler: AsyncIOScheduler, ghost_tick) -> APIRouter:
     async def reset_data(body: ResetDataBody):
         """Danger zone: wipe local data (leads, profile graph, vectors, generated
         documents) so the app can be reset for a clean test. Settings + provider
-        config are kept unless ``clear_settings`` is set. Requires confirm=DELETE."""
+        config are kept unless ``clear_settings`` is set. Requires confirm=DELETE.
+
+        A data-only reset keeps the reusable corpus and clears only user-authored
+        scrape phrases. The full factory reset (``clear_settings``) also purges the
+        corpus — jobs, observations, applications, and history — so "Delete
+        everything" cannot leave hundreds of scraped jobs behind.
+        """
         from data.maintenance import reset_all_data
 
         # Prevent an in-flight search from repopulating leads immediately after they are wiped.
@@ -733,12 +739,18 @@ def create_router(scheduler: AsyncIOScheduler, ghost_tick) -> APIRouter:
         if search_stopped:
             await search_tasks.join(SEARCH_TASK)
         summary = await asyncio.to_thread(reset_all_data, clear_settings=body.clear_settings)
-        corpus_reset = await get_corpus_discovery_service().scrape_clear_history()
-        summary["scrape_history"] = corpus_reset
+        corpus = get_corpus_discovery_service()
+        if body.clear_settings:
+            corpus_reset = await corpus.purge_corpus()
+            summary["corpus_purged"] = corpus_reset
+        else:
+            corpus_reset = await corpus.scrape_clear_history()
+            summary["scrape_history"] = corpus_reset
         summary["search_stopped"] = search_stopped
         if not corpus_reset.get("available", True):
+            label = "corpus purge" if body.clear_settings else "corpus scrape history"
             summary["errors"].append(
-                f"corpus scrape history: {corpus_reset.get('error') or 'corpus unavailable'}"
+                f"{label}: {corpus_reset.get('error') or 'corpus unavailable'}"
             )
         if body.clear_settings:
             # Drop cached LLM clients so a wiped provider config isn't reused. (Done
