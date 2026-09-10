@@ -30,6 +30,7 @@ from galaxy.scrape.runner import (
 
 
 class TestLivenessCheck:
+    @pytest.mark.skipif(os.name == "nt", reason="os.getpgid is POSIX-only")
     def test_our_own_group_is_alive(self):
         # Checked as a group, not a single pid. `npm start` wraps `tsx`, so the recorded pid is
         # the wrapper's; if it ever exits while its children keep collecting, a single-pid check
@@ -45,6 +46,14 @@ class TestLivenessCheck:
         # A group id that cannot exist must read as finished, so reconciliation finalises the row
         # rather than leaving it "running" until the stale sweep.
         assert _alive(2**22) is False
+
+    def test_windows_liveness_uses_the_windows_probe(self, monkeypatch):
+        # os.killpg does not exist on Windows (and os.kill(pid, 0) TERMINATES the target there), so
+        # _alive must delegate to OpenProcess instead of crashing every status poll mid-scrape.
+        monkeypatch.setattr(runner, "_windows_process_alive", lambda pid: pid == 4242)
+        monkeypatch.setattr(runner.os, "name", "nt")
+        assert _alive(4242) is True
+        assert _alive(11) is False
 
 
 class TestStateReporting:

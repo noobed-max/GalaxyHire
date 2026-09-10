@@ -30,7 +30,10 @@ migrate: ## apply corpus schema
 	cd $(CORPUS) && uv run python -c "import asyncio; from galaxy.db.engine import migrate; asyncio.run(migrate())"
 
 # ── install ───────────────────────────────────────────────────────────────────
-.PHONY: install
+.PHONY: setup install
+setup: ## one-command install: toolchains, Docker infra, deps, schema, builds
+	./scripts/install.sh
+
 install: ## install every workspace's deps
 	cd $(CORPUS) && uv sync --extra embed
 	cd $(API) && uv sync

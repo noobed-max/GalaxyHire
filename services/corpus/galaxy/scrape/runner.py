@@ -162,6 +162,37 @@ async def _reap_stale() -> None:
         await s.commit()
 
 
+def _windows_process_alive(pid: int) -> bool:
+    """Whether a Windows process is still running.
+
+    ``os.killpg`` does not exist on Windows and ``os.kill(pid, 0)`` would TERMINATE the process
+    there, so liveness comes from OpenProcess/GetExitCodeProcess instead.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return False
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            # Cannot query: assume alive rather than finalise a healthy run early.
+            return True
+        return code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def _alive(pid: int | None) -> bool:
     """Whether the scrape is still running — checked across the whole **process group**.
 
@@ -171,9 +202,15 @@ def _alive(pid: int | None) -> bool:
     it. Since the process is started with `start_new_session=True`, every descendant shares a
     group whose id is that pid, so signal 0 to the negative pid asks "is any part of this scrape
     still alive" instead of "is the wrapper".
+
+    Windows has no process groups here (and `os.kill(pid, 0)` terminates the target), so the
+    single recorded pid is probed instead; `stop()` uses `taskkill /T` to reach the npm.cmd -> node
+    tree.
     """
     if not pid:
         return False
+    if os.name == "nt":
+        return _windows_process_alive(pid)
     try:
         os.killpg(pid, 0)
     except ProcessLookupError:
@@ -190,9 +227,9 @@ async def _reconcile() -> None:
 
     Restarting the corpus kills the `_watch` task, while the scrape itself survives — it is started
     in its own session on purpose, so stopping the API does not abandon a ten-minute collection
-    half-done. Checking the process group on every status poll closes the gap: it is a couple of
-    syscalls, it needs no background task to have survived, and it heals whether the corpus
-    restarted once or ten times.
+    half-done. Checking the recorded process on every status poll closes the gap: its process group
+    on POSIX, the pid on Windows. It is a couple of syscalls, it needs no background task to have
+    survived, and it heals whether the corpus restarted once or ten times.
     """
     sm = get_sessionmaker()
     async with sm() as s:
@@ -429,8 +466,8 @@ async def start(
             cwd=str(SCRAPER_DIR),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            # Its own process group, so stopping kills the whole npm → node tree rather than just the
-            # npm wrapper, which would leave the scraper running and untracked.
+            # POSIX: its own process group, so stopping kills the whole npm → node tree rather than
+            # just the npm wrapper. Windows ignores this flag; stop() uses taskkill /T there.
             start_new_session=True,
             env=child_env,
         )
@@ -557,14 +594,27 @@ async def stop() -> bool:
 
     pid = row["pid"]
     if pid:
-        try:
-            # Negative pid signals the whole process group — npm spawns node as a child, and killing
-            # only npm would orphan the scraper still holding connections to job boards.
-            os.killpg(pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            # Already gone, or not ours to signal. The row is updated either way, which is what the
-            # UI reads; a stale pid must not turn a stop into an error.
-            pass
+        if os.name == "nt":
+            # POSIX process groups do not exist on Windows. taskkill /T reaches the npm.cmd -> node
+            # tree; the row is already marked stopped, so a stale pid must not raise here either.
+            try:
+                killer = await asyncio.create_subprocess_exec(
+                    "taskkill", "/PID", str(pid), "/T", "/F",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await killer.wait()
+            except OSError:
+                pass
+        else:
+            try:
+                # Negative pid signals the whole process group — npm spawns node as a child, and
+                # killing only npm would orphan the scraper still holding connections to job boards.
+                os.killpg(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                # Already gone, or not ours to signal. The row is updated either way, which is what
+                # the UI reads; a stale pid must not turn a stop into an error.
+                pass
     return True
 
 

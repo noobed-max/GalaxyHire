@@ -18,6 +18,10 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 RUN_DIR=".run"
 mkdir -p "$RUN_DIR"
+# The installer can launch this script detached. Recording the supervisor's own pid lets a later
+# `--stop` (or `make down`) end that background process too, instead of leaving it sleeping after
+# its services are gone.
+SUPERVISOR_FILE="$RUN_DIR/supervisor"
 
 CORPUS_PORT=8100
 APP_PORT=8000
@@ -28,6 +32,22 @@ ok()   { printf '\033[32m✓\033[0m %s\n' "$*"; }
 die()  { printf '\033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 stop_all() {
+  # Stop a detached supervisor first: it owns the services below, and killing it triggers its own
+  # EXIT trap, which is idempotent. `$$` guards the supervisor stopping itself on Ctrl-C.
+  if [ -f "$SUPERVISOR_FILE" ]; then
+    supervisor_pid=$(cat "$SUPERVISOR_FILE" 2>/dev/null || true)
+    rm -f "$SUPERVISOR_FILE"
+    if [ -n "$supervisor_pid" ] && [ "$supervisor_pid" != "$$" ] && kill -0 "$supervisor_pid" 2>/dev/null; then
+      kill "$supervisor_pid" 2>/dev/null || true
+      # The supervisor runs a 1s sleep loop, so its TERM trap fires quickly. Wait for it before
+      # falling back to KILL: a half-run trap must not leave the services (or a stale pid) behind.
+      for _ in $(seq 1 20); do
+        kill -0 "$supervisor_pid" 2>/dev/null || break
+        sleep 0.25
+      done
+      kill -9 "$supervisor_pid" 2>/dev/null || true
+    fi
+  fi
   for f in "$RUN_DIR"/*.pid; do
     [ -e "$f" ] || continue
     pid=$(cat "$f" 2>/dev/null || true)
@@ -44,11 +64,17 @@ if [ "${1:-}" = "--stop" ]; then stop_all; exit 0; fi
 trap stop_all EXIT INT TERM
 
 # Refuse to start on top of a running instance rather than producing a confusing port clash.
+# Checked BEFORE recording this supervisor, so a refused second start cannot overwrite the pid of
+# the instance it is about to complain about.
 for port in "$CORPUS_PORT" "$APP_PORT"; do
   if lsof -ti ":$port" >/dev/null 2>&1; then
     die "port $port is already in use — run './scripts/start.sh --stop' first"
   fi
 done
+
+# Detached runs get their supervisor recorded (see stop_all); foreground runs overwrite it with
+# their own pid, which a Ctrl-C trap clears again.
+echo $$ > "$SUPERVISOR_FILE"
 
 wait_for() { # url, label, attempts
   local url=$1 label=$2 tries=${3:-90}
@@ -115,4 +141,6 @@ echo "   logs: $RUN_DIR/*.log     stop: ./scripts/start.sh --stop  (or Ctrl-C)"
 echo
 # Hold the terminal so Ctrl-C reaches the trap and stops the services. Without this the script
 # exits, the trap fires immediately, and everything shuts down the moment it finished starting.
-while true; do sleep 3600; done
+# The short interval matters for detached runs: bash runs a trapped signal's handler only after
+# the foreground command returns, so `sleep 3600` would delay `--stop` by up to an hour.
+while true; do sleep 1; done
