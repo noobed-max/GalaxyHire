@@ -302,6 +302,19 @@ class TestDegradation:
         result = await CorpusDiscoveryService(ClearableClient()).scrape_clear_history()
         assert result == {"available": True, "cleared": 3, "stopped": False}
 
+    @pytest.mark.asyncio
+    async def test_corpus_purge_is_exposed_for_factory_reset(self):
+        class PurgeableClient(FakeClient):
+            async def purge_corpus(self):
+                return {"purged": {"canonical_jobs": 759, "scrape_runs": 1}, "stopped": False}
+
+        result = await CorpusDiscoveryService(PurgeableClient()).purge_corpus()
+        assert result == {
+            "available": True,
+            "purged": {"canonical_jobs": 759, "scrape_runs": 1},
+            "stopped": False,
+        }
+
 
 class TestQueryRelevance:
     """Neither score in the pipeline measures query relevance — this is the guard for that.

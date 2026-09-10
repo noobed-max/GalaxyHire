@@ -260,3 +260,15 @@ async def scrape_history_clear_route() -> dict:
     from galaxy.scrape import runner
 
     return await runner.clear_history()
+
+
+@router.post("/corpus/purge")
+async def corpus_purge_route() -> dict:
+    """Factory reset: erase every stored corpus row, including the canonical jobs themselves.
+
+    This is the endpoint behind the Danger zone's full "Delete everything" — unlike
+    ``/scrape/history/clear`` it does NOT keep the scraped job corpus.
+    """
+    from galaxy.maintenance import purge_corpus
+
+    return await purge_corpus()

@@ -523,6 +523,13 @@ class CorpusDiscoveryService:
         except CorpusUnavailable as exc:
             return {"available": False, "error": str(exc)}
 
+    async def purge_corpus(self) -> dict[str, Any]:
+        """Full factory reset: erase the stored job corpus, canonical jobs included."""
+        try:
+            return {"available": True, **(await self._client.purge_corpus())}
+        except CorpusUnavailable as exc:
+            return {"available": False, "error": str(exc)}
+
     async def preference(self) -> dict[str, Any]:
         try:
             return {"available": True, **(await self._client.preference())}

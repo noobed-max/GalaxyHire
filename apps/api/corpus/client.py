@@ -305,6 +305,14 @@ class CorpusClient:
         """Remove persisted user-authored scrape phrases, but keep canonical jobs."""
         return await self._post("/scrape/history/clear", {})
 
+    async def purge_corpus(self) -> dict[str, Any]:
+        """Factory reset: delete every stored corpus row, including the canonical jobs.
+
+        The data-only Danger-zone reset uses ``scrape_clear_history`` (phrases only, jobs kept);
+        the full "Delete everything" reset uses this so no scraped jobs survive it.
+        """
+        return await self._post("/corpus/purge", {})
+
     async def preference(self) -> dict[str, Any]:
         """What accumulated feedback currently does to this user's searches.
 

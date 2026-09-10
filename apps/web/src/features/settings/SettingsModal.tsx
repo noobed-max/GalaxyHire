@@ -85,7 +85,8 @@ function DangerZone({ api }: { api: ApiFetch }) {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 12.5, color: "var(--ink-2)", maxWidth: 460 }}>
               Delete all leads, your profile, generated documents, and saved search activity on
-              this device. Your settings, provider keys, and the reusable job corpus are kept.
+              this device. Your settings, provider keys, and the stored job corpus are kept unless
+              you enable the full factory reset when confirming.
             </div>
             <button className="btn" onClick={() => setOpen(true)}
               style={{ color: "var(--bad)", borderColor: "var(--bad)", fontSize: 13, padding: "8px 16px", whiteSpace: "nowrap" }}>
@@ -95,11 +96,13 @@ function DangerZone({ api }: { api: ApiFetch }) {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ fontSize: 12.5, color: "var(--ink-2)" }}>
-              <Icon name="alert" size={13} /> This permanently deletes all leads, your profile (graph + vectors), and generated PDFs on this device. Type <b>DELETE</b> to confirm.
+              <Icon name="alert" size={13} /> {clearSettings
+                ? <>This permanently deletes <b>everything</b> on this device: leads, your profile, generated PDFs, settings, provider keys, and all stored scraped jobs (the job corpus). Type <b>DELETE</b> to confirm.</>
+                : <>This permanently deletes all leads, your profile (graph + vectors), and generated PDFs on this device. The stored job corpus is kept. Type <b>DELETE</b> to confirm.</>}
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--ink-2)", cursor: "pointer" }}>
               <input type="checkbox" checked={clearSettings} onChange={e => setClearSettings(e.target.checked)} />
-              Also reset settings &amp; provider config (full factory reset)
+              Also reset settings &amp; provider keys and delete the stored job corpus (full factory reset)
             </label>
             <input type="text" value={confirmText} onChange={e => setConfirmText(e.target.value)}
               placeholder="Type DELETE to confirm" autoFocus className="field-input" style={{ fontSize: 13 }} />
