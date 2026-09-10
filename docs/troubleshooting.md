@@ -1,5 +1,9 @@
 # Troubleshooting
 
+## Windows: Docker Desktop or startup problems
+
+Run the installer from a normal PowerShell; it uses winget and can request elevation for Docker Desktop. If `docker` is not found afterwards, open a new terminal so the updated PATH is loaded, and sign out or reboot when Docker Desktop was just installed. The Docker engine must be running (WSL 2 backend) before `scripts\start.ps1` can deploy Postgres and Redis. Stop the app processes with `powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Stop`; logs are in `.run\`.
+
 ## The page is blank or returns 404
 
 Build the UI before starting the API:

@@ -36,9 +36,29 @@ Useful options:
 
 Full output is written to `.run/install-*.log`.
 
-`--start`, `--dev`, and `--service` are Linux-only. On macOS the installer still prepares Docker (via Colima), the schema, and the builds; start the services with `make corpus` and `make api` in two terminals.
+In the bash installer, `--start`, `--dev`, and `--service` are Linux-only. On macOS the installer still prepares Docker (via Colima), the schema, and the builds; start the services with `make corpus` and `make api` in two terminals.
 
-The `make` commands below are the manual alternative.
+## Windows (native PowerShell)
+
+Native Windows installs use the PowerShell installer:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1          # install; start later
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start   # install and start
+```
+
+It installs Git, Node.js LTS, Bun, uv, and — when missing — Docker Desktop via winget, then installs the workspace dependencies, creates the local configuration, deploys Postgres/Redis, applies the corpus schema, and builds the UI. The same options exist as on Linux/macOS: `-DryRun`, `-DepsOnly`, `-SkipDocker`, `-Yes`, and `-Help`.
+
+Docker Desktop must be able to start (WSL 2 backend or Hyper-V); sign out or reboot if the installer asks. Start and stop the stack later with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start.ps1
+powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Stop
+```
+
+`start.ps1` writes logs and pid files to `.run\` and serves the app at `http://127.0.0.1:8000` (`-Dev` starts the hot-reload UI on 1420; open the URL in your browser). `-Stop` terminates the GalaxyHire processes; the Postgres and Redis containers keep running (`docker compose down` stops the infrastructure).
+
+The `make` commands below are the manual alternative. They require a POSIX shell (WSL qualifies), so native Windows users should prefer the PowerShell scripts.
 
 ## Install and start
 

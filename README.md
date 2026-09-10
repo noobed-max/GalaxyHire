@@ -39,6 +39,14 @@ One command installs the whole local stack — Docker infrastructure, toolchains
 
 The installer detects your distribution and is safe to re-run. Use `./scripts/install.sh --dry-run` to preview it, or `./scripts/install.sh --help` for all options. Details: [Getting started](docs/getting-started.md).
 
+On Windows, use the PowerShell installer instead:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start
+```
+
+Then `scripts\start.ps1` / `scripts\start.ps1 -Stop` manage the stack.
+
 Prefer manual control? The make workflow below is the supported alternative. It requires Docker, Python 3.13 with [uv](https://docs.astral.sh/uv/), Node.js 20.19 or newer, and [Bun](https://bun.sh/) for the web test/build scripts.
 
 ```bash
