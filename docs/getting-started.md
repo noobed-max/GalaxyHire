@@ -4,13 +4,41 @@ This guide is for running GalaxyHire locally from a checkout.
 
 ## Requirements
 
+The installer installs these for you when they are missing; they are listed for manual setups:
+
 - Docker with Compose support
 - Python 3.13 and [uv](https://docs.astral.sh/uv/)
-- Node.js 20 or newer
+- Node.js 20.19 or newer (22 LTS recommended)
 - [Bun](https://bun.sh/) (the web test and build scripts invoke `bun`)
 - A Chromium-based browser if you want to use the fill-only extension
 
 The web workspace uses Bun-compatible scripts for its fastest test/build workflow, but the repository's supported dependency installation command uses `npm`.
+
+## One-command install
+
+From the repository root:
+
+```bash
+./scripts/install.sh          # install everything; start later with ./scripts/start.sh
+./scripts/install.sh --start  # install, then start the API, corpus, and built UI in the background
+./scripts/install.sh --dev    # install, then start with the hot-reload dev server
+```
+
+The script detects your distribution, installs missing prerequisites (Docker + Compose, uv, Node.js 22 LTS, Bun), installs every workspace's dependencies, creates local configuration from the committed examples, starts Postgres and Redis, applies the corpus schema, and builds the web UI and extension. It is idempotent: re-running skips what is already installed and never replaces an existing `.env`.
+
+Useful options:
+
+- `--dry-run` — print every action without changing the system
+- `--deps-only` — install dependencies only (no Docker, schema, or builds)
+- `--service` — install and start a systemd user service (Linux)
+- `--skip-docker` — never install Docker; it must already be running
+- `-y` — assume yes for all prompts
+
+Full output is written to `.run/install-*.log`.
+
+`--start`, `--dev`, and `--service` are Linux-only. On macOS the installer still prepares Docker (via Colima), the schema, and the builds; start the services with `make corpus` and `make api` in two terminals.
+
+The `make` commands below are the manual alternative.
 
 ## Install and start
 

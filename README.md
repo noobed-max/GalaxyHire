@@ -31,7 +31,15 @@ GalaxyHire is a local-first job-search and application workspace. It collects cu
 
 ## Development quick start
 
-The commands below are the supported repository workflow. They require Docker, Python 3.13 with [uv](https://docs.astral.sh/uv/), Node.js 20 or newer, and [Bun](https://bun.sh/) for the web test/build scripts.
+One command installs the whole local stack — Docker infrastructure, toolchains, workspace dependencies, the database schema, and production builds:
+
+```bash
+./scripts/install.sh --start
+```
+
+The installer detects your distribution and is safe to re-run. Use `./scripts/install.sh --dry-run` to preview it, or `./scripts/install.sh --help` for all options. Details: [Getting started](docs/getting-started.md).
+
+Prefer manual control? The make workflow below is the supported alternative. It requires Docker, Python 3.13 with [uv](https://docs.astral.sh/uv/), Node.js 20.19 or newer, and [Bun](https://bun.sh/) for the web test/build scripts.
 
 ```bash
 make install
