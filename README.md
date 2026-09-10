@@ -37,15 +37,19 @@ One command installs the whole local stack — Docker infrastructure, toolchains
 ./scripts/install.sh --start
 ```
 
-The installer detects your distribution and is safe to re-run. Use `./scripts/install.sh --dry-run` to preview it, or `./scripts/install.sh --help` for all options. Details: [Getting started](docs/getting-started.md).
+Nothing checked out yet? This downloads the repository to `~/GalaxyHire`, then installs and starts it:
 
-On Windows, use the PowerShell installer instead:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start
+```bash
+curl -fsSL https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/install.sh | bash -s -- --start
 ```
 
-Then `scripts\start.ps1` / `scripts\start.ps1 -Stop` manage the stack.
+On Windows (no checkout needed either):
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/install.ps1))) -Start
+```
+
+Both installers detect what is already on the machine — Docker, Git, Node.js, uv, Bun — and only install what is missing. They are safe to re-run, and use `--dry-run`/`-DryRun` to preview. Details: [Getting started](docs/getting-started.md).
 
 Prefer manual control? The make workflow below is the supported alternative. It requires Docker, Python 3.13 with [uv](https://docs.astral.sh/uv/), Node.js 20.19 or newer, and [Bun](https://bun.sh/) for the web test/build scripts.
 

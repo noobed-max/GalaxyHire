@@ -24,7 +24,20 @@ From the repository root:
 ./scripts/install.sh --dev    # install, then start with the hot-reload dev server
 ```
 
-The script detects your distribution, installs missing prerequisites (Docker + Compose, uv, Node.js 22 LTS, Bun), installs every workspace's dependencies, creates local configuration from the committed examples, starts Postgres and Redis, applies the corpus schema, and builds the web UI and extension. It is idempotent: re-running skips what is already installed and never replaces an existing `.env`.
+Nothing checked out yet? The script also works as a one-liner. It downloads the repository to `~/GalaxyHire` (no git required) and then installs and starts:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/install.sh | bash -s -- --start
+```
+
+Set `GALAXYHIRE_DIR` to choose the checkout location and `GALAXYHIRE_REF` to test a branch:
+
+```bash
+GALAXYHIRE_DIR=~/code/GalaxyHire GALAXYHIRE_REF=master \
+  curl -fsSL https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/install.sh | bash -s -- --start
+```
+
+The script detects your distribution, checks what is already installed, and only installs what is missing (Docker + Compose, uv, Node.js 22 LTS, Bun). It then installs every workspace's dependencies, creates local configuration from the committed examples, starts Postgres and Redis, applies the corpus schema, and builds the web UI and extension. It is idempotent: re-running skips what is already installed and never replaces an existing `.env`.
 
 Useful options:
 
@@ -40,14 +53,22 @@ In the bash installer, `--start`, `--dev`, and `--service` are Linux-only. On ma
 
 ## Windows (native PowerShell)
 
-Native Windows installs use the PowerShell installer:
+Native Windows installs use the PowerShell installer. With no checkout yet, this one-liner downloads the repository to `%USERPROFILE%\GalaxyHire` and then installs and starts:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/install.ps1))) -Start
+```
+
+From an existing checkout:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1          # install; start later
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start   # install and start
 ```
 
-It installs Git, Node.js LTS, Bun, uv, and — when missing — Docker Desktop via winget, then installs the workspace dependencies, creates the local configuration, deploys Postgres/Redis, applies the corpus schema, and builds the UI. The same options exist as on Linux/macOS: `-DryRun`, `-DepsOnly`, `-SkipDocker`, `-Yes`, and `-Help`.
+Set `GALAXYHIRE_DIR` to choose the checkout location and `GALAXYHIRE_REF` to test a branch before running the one-liner.
+
+It checks what is already installed and only installs what is missing: Git, Node.js LTS, Bun, uv, and — when missing — Docker Desktop via winget. It then installs the workspace dependencies, creates the local configuration, deploys Postgres/Redis, applies the corpus schema, and builds the UI. The same options exist as on Linux/macOS: `-DryRun`, `-DepsOnly`, `-SkipDocker`, `-Yes`, and `-Help`.
 
 Docker Desktop must be able to start (WSL 2 backend or Hyper-V); sign out or reboot if the installer asks. Start and stop the stack later with:
 
