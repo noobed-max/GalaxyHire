@@ -27,12 +27,25 @@
 #   ./scripts/install.sh --deps-only     only install dependencies (no Docker, no builds)
 #   ./scripts/install.sh --dry-run       print every action without changing the system
 #
+# One-liners (no checkout required; the script downloads the repository itself):
+#   curl -fsSL https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/install.sh | bash -s -- --start
+#   GALAXYHIRE_DIR=~/code/GalaxyHire GALAXYHIRE_REF=master bash scripts/install.sh --start
+#
 # Run ./scripts/install.sh --help for all options.
 set -Eeuo pipefail
 
 # ── paths ─────────────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# BASH_SOURCE is unset when this file is piped (curl | bash); an empty REPO_ROOT makes the
+# bootstrap below fetch a checkout before anything else runs.
+SCRIPT_PATH="${BASH_SOURCE[0]:-}"
+SCRIPT_DIR=''
+if [ -n "${SCRIPT_PATH}" ] && [ -f "${SCRIPT_PATH}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
+fi
+REPO_ROOT=''
+if [ -n "${SCRIPT_DIR}" ]; then
+  REPO_ROOT="$(cd "${SCRIPT_DIR}/.." 2>/dev/null && pwd || true)"
+fi
 CORPUS_DIR="${REPO_ROOT}/services/corpus"
 API_DIR="${REPO_ROOT}/apps/api"
 WEB_DIR="${REPO_ROOT}/apps/web"
@@ -91,6 +104,10 @@ Options:
       --allow-root   permit running as root (not recommended)
   -h, --help         show this help
 
+Environment (used by the curl one-liner):
+  GALAXYHIRE_DIR     where to download the checkout (default: ~/GalaxyHire)
+  GALAXYHIRE_REF     git ref to download, e.g. a branch (default: master)
+
 Exit status: 0 on success, non-zero on the first failed step.
 Full output is mirrored to .run/install-*.log.
 EOF
@@ -119,7 +136,7 @@ parse_args() {
 }
 
 # ── logging ───────────────────────────────────────────────────────────────────
-_log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" >>"${LOG_FILE}" 2>/dev/null || true; }
+_log() { { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" >>"${LOG_FILE}"; } 2>/dev/null || true; }
 info() { printf '%s\n' "  ${C_CYAN}▸${C_RESET} $*"; _log "INFO  $*"; }
 ok()   { printf '%s\n' "  ${C_GREEN}✓${C_RESET} $*"; _log "OK    $*"; }
 warn() { printf '%s\n' "  ${C_YELLOW}!${C_RESET} $*" >&2; _log "WARN  $*"; }
@@ -816,6 +833,41 @@ set_total_steps() {
   fi
 }
 
+# ── bootstrap (curl | bash) ───────────────────────────────────────────────────
+# Running from a pipe or from a copy of this file outside a checkout has no repository to install
+# from. Download one first (no git required), then hand over to the real installer inside it.
+bootstrap_checkout() {
+  local ref="${GALAXYHIRE_REF:-master}"
+  local target="${GALAXYHIRE_DIR:-${HOME}/GalaxyHire}"
+  local archive_url="https://codeload.github.com/noobed-max/GalaxyHire/tar.gz/refs/heads/${ref}"
+
+  if [ -f "${target}/docker-compose.yml" ] && [ -d "${target}/services/corpus" ]; then
+    info "Using the existing checkout at ${target}"
+  else
+    if [ -e "${target}" ] && [ -n "$(find "${target}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+      die "${target} exists but is not a GalaxyHire checkout. Set GALAXYHIRE_DIR to another path."
+    fi
+    have curl || have wget || die "curl or wget is required to download GalaxyHire."
+    info "Downloading GalaxyHire (${ref}) to ${target}..."
+    local tmp base
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/galaxyhire-bootstrap.XXXXXX")"
+    if have curl; then
+      curl -fsSL "${archive_url}" | tar -xz -C "${tmp}" || die "Could not download ${archive_url}"
+    else
+      wget -qO- "${archive_url}" | tar -xz -C "${tmp}" || die "Could not download ${archive_url}"
+    fi
+    base="$(find "${tmp}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+    [ -n "${base}" ] || die "The downloaded archive did not contain a repository directory."
+    mkdir -p "$(dirname "${target}")"
+    mv "${base}" "${target}"
+    rm -rf "${tmp}"
+    info "Checkout ready at ${target}"
+  fi
+
+  # Re-run the real installer from the checkout with the original arguments.
+  exec bash "${target}/scripts/install.sh" "$@"
+}
+
 main() {
   parse_args "$@"
   set_total_steps
@@ -847,6 +899,11 @@ main() {
 
   print_summary
 }
+
+# A normal checkout skips the bootstrap and runs the installer directly.
+if [ -z "${REPO_ROOT}" ] || [ ! -f "${REPO_ROOT}/docker-compose.yml" ] || [ ! -d "${REPO_ROOT}/services/corpus" ]; then
+  bootstrap_checkout "$@"
+fi
 
 main "$@"
 

@@ -46,6 +46,15 @@
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start
+
+.EXAMPLE
+    # One-liner with no checkout (downloads the repository first)
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/install.ps1))) -Start
+
+.NOTES
+    Environment overrides for the one-liner:
+      GALAXYHIRE_DIR  where to download the checkout (default: %USERPROFILE%\GalaxyHire)
+      GALAXYHIRE_REF  git ref to download, e.g. a branch (default: master)
 #>
 [CmdletBinding()]
 param(
@@ -60,9 +69,65 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# ---- bootstrap (irm | iex) --------------------------------------------------
+# When this file is piped (irm ... | iex) or run outside a checkout there is no repository to
+# install from. Download one first (no git required), then hand over to the real installer inside
+# it. A normal checkout skips this entirely.
+function Invoke-Bootstrap {
+    param([hashtable]$BoundParameters)
+    if ($env:OS -ne 'Windows_NT') {
+        throw 'This installer is for Windows. Use ./scripts/install.sh on Linux or macOS.'
+    }
+    $ref = if ($env:GALAXYHIRE_REF) { $env:GALAXYHIRE_REF } else { 'master' }
+    $target = if ($env:GALAXYHIRE_DIR) { $env:GALAXYHIRE_DIR } else { Join-Path $HOME 'GalaxyHire' }
+    $archive = "https://codeload.github.com/noobed-max/GalaxyHire/zip/refs/heads/$ref"
+
+    if (Test-Path (Join-Path $target 'docker-compose.yml')) {
+        Write-Host ("  > Using the existing checkout at {0}" -f $target) -ForegroundColor Cyan
+    }
+    else {
+        if (Test-Path $target) {
+            if ((Get-ChildItem -Force $target | Measure-Object).Count -eq 0) {
+                Remove-Item -Force $target
+            }
+            else {
+                throw ("{0} exists but is not a GalaxyHire checkout. Set GALAXYHIRE_DIR to another path." -f $target)
+            }
+        }
+        Write-Host ("  > Downloading GalaxyHire ({0}) to {1}..." -f $ref, $target) -ForegroundColor Cyan
+        $tmp = Join-Path ([IO.Path]::GetTempPath()) ("galaxyhire-" + [Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+        $zip = Join-Path $tmp 'galaxyhire.zip'
+        Invoke-WebRequest -Uri $archive -OutFile $zip -UseBasicParsing
+        Expand-Archive -Path $zip -DestinationPath $tmp -Force
+        $inner = Get-ChildItem $tmp -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName 'docker-compose.yml') } |
+            Select-Object -First 1
+        if (-not $inner) { throw 'The downloaded archive did not contain a repository directory.' }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+        Move-Item -Path $inner.FullName -Destination $target
+        Remove-Item -Recurse -Force $tmp
+        Write-Host ("  > Checkout ready at {0}" -f $target) -ForegroundColor Green
+    }
+
+    # Re-run the real installer from the checkout with the original arguments.
+    $installer = Join-Path $target 'scripts\install.ps1'
+    & $installer @BoundParameters
+    exit $LASTEXITCODE
+}
+
 # ---- paths ------------------------------------------------------------------
-$ScriptDir  = $PSScriptRoot
-$RepoRoot   = (Resolve-Path (Join-Path $ScriptDir '..')).Path
+$ScriptDir = $PSScriptRoot
+$RepoRoot = ''
+if ($ScriptDir) {
+    $candidate = Join-Path $ScriptDir '..'
+    if (Test-Path $candidate) { $RepoRoot = (Resolve-Path $candidate).Path }
+}
+if (-not $RepoRoot -or
+    -not (Test-Path (Join-Path $RepoRoot 'docker-compose.yml')) -or
+    -not (Test-Path (Join-Path $RepoRoot 'services\corpus'))) {
+    Invoke-Bootstrap -BoundParameters $PSBoundParameters
+}
 $CorpusDir  = Join-Path $RepoRoot 'services\corpus'
 $ApiDir     = Join-Path $RepoRoot 'apps\api'
 $WebDir     = Join-Path $RepoRoot 'apps\web'
