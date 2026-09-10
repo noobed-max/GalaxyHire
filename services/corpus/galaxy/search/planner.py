@@ -72,6 +72,7 @@ class CompiledQuery:
     #: source proves were posted inside it, OR undated jobs that merely LANDED inside it —
     #: the two claims are different and the UI must badge them differently (MAJOR-CHANGE/05 §3).
     fresh_hours: int | None = None
+    observed_after: str | None = None  # ISO; only jobs observed by the current collection run
 
 
 def _detect_seniority(text: str) -> Seniority | None:
@@ -122,6 +123,7 @@ def compile_query(
     limit: int = 50,
     seen_after: str | None = None,
     fresh_hours: int | None = None,
+    observed_after: str | None = None,
 ) -> CompiledQuery:
     """Build a CompiledQuery from explicit UI filters (+ optional free-text term)."""
     term = search_term or ""
@@ -177,5 +179,5 @@ def compile_query(
     )
     return CompiledQuery(
         positive=positive, negative=neg, slice=prof_slice, limit=limit, seen_after=seen_after,
-        fresh_hours=fresh_hours,
+        fresh_hours=fresh_hours, observed_after=observed_after,
     )

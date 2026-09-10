@@ -82,6 +82,21 @@ def test_location_components_and_bengaluru_aliases_match_across_fields():
     assert params["loc_1"] == ["%india%"]
 
 
+def test_current_scrape_boundary_replaces_first_seen_freshness_window():
+    observed_after = "2026-09-09T17:40:58+00:00"
+    compiled = compile_query(
+        search_term="software developer",
+        fresh_hours=24,
+        observed_after=observed_after,
+    )
+    where, params = _hard_filters(compiled, "hashing-v1")
+
+    assert "last_seen_at >= :observed_after" in where
+    assert "date_posted >=" not in where
+    assert "first_seen_at >=" not in where
+    assert params["observed_after"] == datetime.fromisoformat(observed_after)
+
+
 def test_located_search_does_not_blanket_admit_remote():
     # A "REMOTE (EMEA/APAC)" posting is not a UK job. Remote rows must name the place like
     # everyone else (bare-"Remote" only passes a remote search) — the old blanket bypass

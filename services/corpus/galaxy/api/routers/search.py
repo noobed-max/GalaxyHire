@@ -67,6 +67,7 @@ class SearchRequest(StrictRequest):
     #: Product recency window. None = off (the caller decides); apps/api passes 24 by default so
     #: only source-proved-fresh jobs, or undated jobs new to the corpus, are ever served (R3).
     fresh_hours: int | None = None
+    observed_after: str | None = None  # ISO; only jobs observed by the current scrape run
 
 
 @router.post("/search")
@@ -94,6 +95,7 @@ async def search_route(req: SearchRequest, user_id: UUID = Depends(_user)) -> di
         limit=req.limit,
         sort=req.sort,
         fresh_hours=req.fresh_hours,
+        observed_after=req.observed_after,
     )
     # `quality` says whether these results are answers or merely nearest neighbours. Retrieval
     # always returns its closest N, so without this a gibberish query looks identical to a good one.

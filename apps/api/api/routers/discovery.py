@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -108,10 +109,9 @@ async def _resolve_portals(
     """Resolve which portals a search collects from, against the scraper's own catalog.
 
     Precedence per portal: an explicit request list ("this run only") > the saved toggle map
-    (`scrape_portals` setting) > the catalog's `default_enabled`. A saved map that predates a
-    portal (or was written when the catalog was smaller) does not vote on it — the catalog
-    default does — so a stale partial map can neither silently narrow a search nor resurrect
-    a portal the defaults turned off.
+    (`scrape_portals` setting) > every currently selectable catalog entry. A saved map that
+    predates a portal does not vote on the new source, so it starts enabled and the next UI save
+    writes the complete truth map.
 
     Unknown ids in an explicit list are refused rather than dropped: a toggle that silently
     stops corresponding to a real portal is the same class of bug as an invisible filter.
@@ -121,7 +121,11 @@ async def _resolve_portals(
     """
     catalog = await corpus.scrape_sources()
     sources = catalog.get("sources", [])
-    known = {s["id"] for s in sources}
+    selectable = [
+        source for source in sources
+        if source.get("id") and source.get("recency_policy") != "off"
+    ]
+    known = {source["id"] for source in selectable}
     if not known:
         # No catalog (corpus down or config missing): pass an explicit list through untouched —
         # the scraper validates ids hard — and let stored jobs serve an unlocated search rather
@@ -132,17 +136,19 @@ async def _resolve_portals(
     else:
         raw = str(cfg.get("scrape_portals") or "").strip()
         if not raw:
-            # No saved selection yet — the catalog's default_enabled set governs, resolved HERE
-            # rather than left as None: the run must record the exact set it covered, or the
-            # superset freshness rule has nothing to compare against.
-            return sorted(s["id"] for s in sources if s["default_enabled"]), None
+            # A first run should cover everything the UI can turn on. Resolve it HERE rather than
+            # leaving None: the run must record the exact set it covered, or the superset
+            # freshness rule has nothing to compare against.
+            return sorted(source["id"] for source in selectable), None
         try:
             saved = json.loads(raw)
         except ValueError:
             return None, "Saved portal selection is corrupt; re-save it from the portals panel."
-        if not isinstance(saved, dict) or not saved:
-            return None, None
-        chosen = [s["id"] for s in sources if saved.get(s["id"], s["default_enabled"])]
+        if not isinstance(saved, dict):
+            return None, "Saved portal selection is corrupt; re-save it from the portals panel."
+        if not saved:
+            return sorted(source["id"] for source in selectable), None
+        chosen = [source["id"] for source in selectable if saved.get(source["id"], True)]
     if not chosen:
         return None, "Turn on at least one portal before searching."
     unknown = sorted(set(chosen) - known)
@@ -226,14 +232,17 @@ async def _scrape_for(
     and waiting with visible progress was chosen instead. Progress is broadcast over the websocket
     so the UI's indicator moves rather than showing a bare spinner.
 
-    Failure here is never fatal. If collection breaks, the search still runs against whatever is
-    already stored: a thin page of real jobs is more useful than an error, and the corpus usually
-    holds plenty from previous runs.
+    A user-triggered collection failure is returned to the caller. The dashboard must not turn a
+    scraper outage into a plausible-looking page of jobs from an older corpus run.
     """
     outcome = {
         "started": False,
         "fresh_skipped": False,
         "completed": False,
+        "failed": False,
+        "stopped": False,
+        "error": "",
+        "started_at": "",
         "collected": 0,
         "deduplicated": 0,
         "conflict": False,
@@ -271,9 +280,12 @@ async def _scrape_for(
             + (f" across {len(portals)} portals" if portals else "")
             + "…",
         )
+        scrape_started_at = datetime.now(UTC).isoformat()
         started = await corpus.scrape_start(phrase, location=location, portals=portals)
         if not started.get("available", True):
-            await broadcast("scan_warn", "Could not start collection; searching stored jobs instead")
+            outcome["failed"] = True
+            outcome["error"] = str(started.get("error") or "The scraper is unavailable")
+            await broadcast("scan_error", f"Fresh collection failed: {outcome['error']}")
             return outcome
         if started.get("conflict"):
             outcome["conflict"] = True
@@ -284,6 +296,7 @@ async def _scrape_for(
             return outcome
 
         outcome["started"] = True
+        outcome["started_at"] = scrape_started_at
         where = f" in {location}" if location else ""
         how = f" from {len(portals)} portals" if portals else " from the job boards"
         await broadcast("scan_info", f"Fresh scrape collecting {phrase!r}{where}{how}…")
@@ -292,22 +305,38 @@ async def _scrape_for(
                 # Stopping a search must stop the collection it started, or the user presses stop
                 # and every selected portal carries on hammering job boards unattended.
                 await corpus.scrape_stop()
+                outcome["stopped"] = True
                 return outcome
             await asyncio.sleep(SCRAPE_POLL_S)
             state = await corpus.scrape_status()
+            if state.get("available") is False:
+                outcome["failed"] = True
+                outcome["error"] = str(state.get("error") or "The scraper status is unavailable")
+                await broadcast("scan_error", f"Fresh collection failed: {outcome['error']}")
+                return outcome
             if not state.get("running"):
                 outcome["collected"] = int(state.get("collected", 0) or 0)
                 # An explicit stopped state means the user cancelled the collection; don't
                 # retire rows based on a partial snapshot.
-                outcome["completed"] = state.get("status", "done") not in {"failed", "stopped"}
+                terminal_status = state.get("status", "done")
+                outcome["completed"] = terminal_status not in {"failed", "stopped"}
+                outcome["stopped"] = terminal_status == "stopped"
+                outcome["failed"] = terminal_status == "failed"
+                outcome["error"] = str(state.get("error") or "")
+                if outcome["failed"]:
+                    await broadcast("scan_error", f"Fresh collection failed: {outcome['error'] or 'scraper failed'}")
+                elif outcome["stopped"]:
+                    await broadcast("scan_warn", "Fresh collection stopped before completion")
                 await broadcast(
                     "scan_info",
                     f"Fresh scrape collected {outcome['collected']} jobs",
                 )
                 return outcome
-    except Exception as exc:  # noqa: BLE001 - collection is best-effort; search must still happen
-        _log.warning("scrape for %r failed, searching stored jobs: %s", phrase, exc)
-        await broadcast("scan_warn", "Collection failed; searching stored jobs instead")
+    except Exception as exc:  # noqa: BLE001 - surfaced as an explicit search failure
+        _log.warning("scrape for %r failed: %s", phrase, exc)
+        outcome["failed"] = True
+        outcome["error"] = str(exc) or "The scraper failed to start"
+        await broadcast("scan_error", f"Fresh collection failed: {outcome['error']}")
         return outcome
 
 
@@ -346,11 +375,11 @@ def create_router(manager=None, logger=None) -> APIRouter:
 
         job = job_store.create("corpus_search", {"query": query})
         job_store.update(job.job_id, status="running", progress=10)
-        await _broadcast("scan_start", f"Searching the corpus for {query!r}")
+        await _broadcast("scan_start", f"Starting a fresh job search for {query!r}")
 
-        # Collect first, then filter. The phrase the user typed is what goes to the job boards —
-        # nothing else, per D7 — and every filter is applied afterwards over what came back, so
-        # changing a filter never re-scrapes.
+        # Collect first, then filter the jobs observed by this run. The phrase the user typed is
+        # what goes to the job boards — nothing else, per D7 — and changing a filter never
+        # re-scrapes.
         #
         # Scheduled/background searches skip a recent matching scrape. The dashboard's explicit
         # Find action sets force_scrape, which deliberately bypasses that cache for every click.
@@ -358,7 +387,9 @@ def create_router(manager=None, logger=None) -> APIRouter:
         # error to surface, not something to scrape around.
         portals, portal_err = await _resolve_portals(corpus, cfg, req.portals)
         if portal_err:
-            return {"ok": False, "error": portal_err}
+            message = str(portal_err)
+            job_store.update(job.job_id, status="failed", progress=100, error=message)
+            return {"ok": False, "error": message, "query": query, "filters": filters}
 
         # The location filter is the only one handed to the boards; the rest narrow stored jobs.
         if req.location is not None:
@@ -390,10 +421,29 @@ def create_router(manager=None, logger=None) -> APIRouter:
             await _broadcast("scan_stop", "Search cancelled")
             return {"ok": False, "cancelled": True, "query": query, "filters": filters}
 
+        # An explicit dashboard Find action must never fall back to stale corpus rows when its
+        # collection failed or was stopped. That made a broken scraper look like a successful new
+        # search. Background callers retain their historical best-effort behavior.
+        if req.force_scrape and not scrape_outcome.get("fresh_skipped"):
+            if scrape_outcome.get("failed"):
+                error = scrape_outcome.get("error") or "Fresh collection failed"
+                job_store.update(job.job_id, status="failed", progress=100, error=error)
+                return {
+                    "ok": False, "error": error, "query": query, "filters": filters,
+                    "scrape": scrape_outcome, "leads": [], "retrieved": 0,
+                }
+            if scrape_outcome.get("stopped") or not scrape_outcome.get("completed"):
+                error = "Fresh collection did not complete; no stale jobs were returned."
+                job_store.update(job.job_id, status="failed", progress=100, error=error)
+                return {
+                    "ok": False, "error": error, "query": query, "filters": filters,
+                    "scrape": scrape_outcome, "leads": [], "retrieved": 0,
+                }
+
         if filters:
             # Say what was inferred from the sentence. A filter the user did not set explicitly and
             # cannot see is indistinguishable from the corpus simply not having those jobs.
-            await _broadcast("scan_info", f"Applying your filters after collection: {filters}")
+            await _broadcast("scan_info", f"Filtering newly collected jobs: {filters}")
 
         result = await corpus.search(
             query=query,
@@ -409,6 +459,11 @@ def create_router(manager=None, logger=None) -> APIRouter:
             limit=req.limit,
             rerank=req.rerank,
             use_llm=req.use_llm,
+            observed_after=(
+                scrape_outcome.get("started_at")
+                if req.force_scrape and scrape_outcome.get("completed")
+                else None
+            ),
         )
 
         if not result.corpus_available:
@@ -456,7 +511,10 @@ def create_router(manager=None, logger=None) -> APIRouter:
                 _log.warning("save discovery leads failed: %s", exc)
 
         retire_helper = getattr(repo.leads, "retire_stale_discovery_leads", None)
-        if scrape_outcome.get("completed") and retire_helper is not None:
+        # Retirement needs a known, non-empty portal set: a run whose coverage is unknown (catalog
+        # unavailable, so `_resolve_portals` passed None through) cannot archive rows from boards it
+        # may never have asked. The store enforces the same rule; this guard avoids the DB round trip.
+        if scrape_outcome.get("completed") and portals and retire_helper is not None:
             try:
                 retirement = await asyncio.to_thread(
                     retire_helper,

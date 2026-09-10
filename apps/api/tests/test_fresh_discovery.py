@@ -49,6 +49,17 @@ class _FreshRunCorpus:
         self.finished.set()
 
 
+class _FailedRunCorpus:
+    async def scrape_fresh(self, *_args):
+        return False
+
+    async def scrape_start(self, *args, **kwargs):
+        return {
+            "available": False,
+            "error": "cannot start the scraper: no npm on the corpus service PATH",
+        }
+
+
 async def _broadcast(*_args):
     return None
 
@@ -106,6 +117,17 @@ def test_non_dashboard_search_keeps_freshness_cache(monkeypatch):
     )
     assert outcome["fresh_skipped"] is True
     assert not corpus.scrape_start_calls
+
+
+def test_dashboard_find_surfaces_scraper_start_failure_without_corpus_fallback(monkeypatch):
+    corpus = _FailedRunCorpus()
+    monkeypatch.setattr("api.routers.discovery.SCRAPE_POLL_S", 0)
+    outcome = asyncio.run(
+        _scrape_for(corpus, "software engineer", None, _broadcast, force_scrape=True)
+    )
+    assert outcome["failed"] is True
+    assert outcome["completed"] is False
+    assert "no npm" in outcome["error"]
 
 
 def _lead(job_id: str, url: str, *, status: str = "discovered") -> dict:
@@ -187,3 +209,87 @@ def test_retirement_is_bounded_and_never_touches_applied_rows(tmp_path: Path):
         assert conn.execute("SELECT count(*) FROM events WHERE job_id='stale'").fetchone()[0] == 1
     finally:
         conn.close()
+
+
+def _seed_stale_with_scope(db: str, job_id: str, scope_extra: dict) -> None:
+    scope = json.dumps({
+        "discovery_scope": {
+            "query": "software engineer", "location": "berlin", **scope_extra,
+        }
+    })
+    conn = connect(db)
+    try:
+        conn.execute(
+            "INSERT INTO leads(job_id,title,company,url,platform,status,source_meta,created_at) "
+            "VALUES(?,?,?,?,?,?,?,datetime('now','-45 days'))",
+            (job_id, "Old Engineer", "Acme", f"https://acme.test/{job_id}",
+             "greenhouse", "discovered", scope),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _status_of(db: str, job_id: str) -> str:
+    conn = connect(db)
+    try:
+        return str(conn.execute("SELECT status FROM leads WHERE job_id=?", (job_id,)).fetchone()[0])
+    finally:
+        conn.close()
+
+
+def test_retirement_fails_closed_when_run_coverage_is_unknown(tmp_path: Path):
+    # `portals=None` means the catalog was unavailable, so the run covered an unknown set of
+    # boards. Unknown is not unlimited: nothing may be archived on that basis.
+    db = str(tmp_path / "leads.db")
+    init_sql(db)
+    _seed_stale_with_scope(db, "stale", {"portals": ["greenhouse"]})
+
+    summary = retire_stale_discovery_leads(
+        query="software engineer", location="Berlin", portals=None,
+        fresh_leads=[_lead("fresh", "https://acme.test/new")], db_path=db,
+    )
+    assert summary["retired"] == 0
+    assert _status_of(db, "stale") == "discovered"
+
+
+def test_retirement_keeps_rows_without_a_recorded_portal_scope(tmp_path: Path):
+    # A row whose scope records no portals cannot prove it was superseded by this run.
+    db = str(tmp_path / "leads.db")
+    init_sql(db)
+    _seed_stale_with_scope(db, "stale", {"portals": []})
+
+    summary = retire_stale_discovery_leads(
+        query="software engineer", location="Berlin", portals=["greenhouse"],
+        fresh_leads=[_lead("fresh", "https://acme.test/new")], db_path=db,
+    )
+    assert summary["retired"] == 0
+    assert _status_of(db, "stale") == "discovered"
+
+
+def test_retirement_keeps_rows_from_portals_the_run_did_not_cover(tmp_path: Path):
+    db = str(tmp_path / "leads.db")
+    init_sql(db)
+    _seed_stale_with_scope(db, "stale", {"portals": ["jobicy", "greenhouse"]})
+
+    summary = retire_stale_discovery_leads(
+        query="software engineer", location="Berlin", portals=["greenhouse"],
+        fresh_leads=[_lead("fresh", "https://acme.test/new")], db_path=db,
+    )
+    assert summary["retired"] == 0
+    assert _status_of(db, "stale") == "discovered"
+
+
+def test_retirement_accepts_a_superset_run(tmp_path: Path):
+    # The positive case: a run whose portal set covers every board the old row came from may
+    # retire it. Over-tightening this would leak stale rows forever.
+    db = str(tmp_path / "leads.db")
+    init_sql(db)
+    _seed_stale_with_scope(db, "stale", {"portals": ["greenhouse"]})
+
+    summary = retire_stale_discovery_leads(
+        query="software engineer", location="Berlin", portals=["arbeitnow", "greenhouse"],
+        fresh_leads=[_lead("fresh", "https://acme.test/new")], db_path=db,
+    )
+    assert summary["retired"] == 1
+    assert _status_of(db, "stale") == "discarded"

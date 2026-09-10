@@ -33,6 +33,10 @@ SUBSET of the requested portals is not an answer to the wider question — servi
 the user 3 boards' results under a 40-board search with nothing on screen to say so. Supersets
 are accepted; subsets are not.
 
+Only runs that finished with ``done`` count as fresh. A ``stopped`` run was interrupted by the
+user, so it covered an unknown subset of its recorded portals: treating it as fresh would let a
+partial snapshot suppress the collection that would have completed it for the next 24 hours.
+
 ## The native Python-connector path is gone
 
 This file used to also fan out to the GalaxyJobsAi Python adapters (`PYTHON_SITES`,
@@ -62,6 +66,42 @@ SCRAPER_DIR = Path(__file__).resolve().parents[3] / "scraper-node"
 #: A run older than this with no completion is treated as dead. Covers the case where the corpus
 #: was killed mid-scrape: the row would otherwise say "running" forever and block every new scrape.
 STALE_AFTER_SECONDS = 60 * 60 * 3
+
+
+def _resolve_npm() -> str | None:
+    """Find npm even when the corpus was started outside an interactive shell.
+
+    nvm, Volta, mise and asdf commonly add npm only from shell startup files.
+    Desktop launchers and service managers do not read those files, so relying
+    exclusively on ``PATH`` makes the scraper work in a terminal but fail from
+    the application.  An explicit ``SCRAPER_NPM`` always wins.
+    """
+    override = str(os.environ.get("SCRAPER_NPM") or "").strip()
+    if override:
+        resolved = shutil.which(override)
+        return resolved or (override if Path(override).is_file() else None)
+
+    resolved = shutil.which("npm")
+    if resolved:
+        return resolved
+
+    home = Path.home()
+    candidates = [
+        Path(str(os.environ.get("NVM_BIN") or "")) / "npm",
+        Path(str(os.environ.get("VOLTA_HOME") or "")) / "bin" / "npm",
+        home / ".volta" / "bin" / "npm",
+    ]
+    for pattern in (
+        ".nvm/versions/node/*/bin/npm",
+        ".local/share/mise/installs/node/*/bin/npm",
+        ".asdf/installs/nodejs/*/bin/npm",
+    ):
+        candidates.extend(sorted(home.glob(pattern), reverse=True))
+
+    for candidate in candidates:
+        if str(candidate) not in {"npm", "bin/npm"} and candidate.is_file():
+            return str(candidate)
+    return None
 
 
 @dataclass
@@ -263,6 +303,10 @@ async def freshly_scraped(
     Location is part of the key: "software engineer" collected for India is not fresh for the UK.
     Portals are part of the key for the same reason in the other direction: a run over 3 boards is
     not fresh for a search across 40 (MAJOR-CHANGE/06 §5).
+
+    Only a ``done`` run answers the question. A ``stopped`` run is a partial snapshot of an
+    unknown subset of its portals — however many it recorded — so it can never vouch for the
+    requested coverage; the next search must collect the rest.
     """
     sm = get_sessionmaker()
     async with sm() as s:
@@ -271,7 +315,7 @@ async def freshly_scraped(
                 text(
                     "SELECT portals FROM scrape_runs "
                     "WHERE lower(phrase) = lower(:p) AND lower(coalesce(location,'')) = lower(:loc) "
-                    "AND status IN ('done', 'stopped') "
+                    "AND status = 'done' "
                     "AND finished_at > now() - make_interval(hours => :h)"
                 ),
                 {"p": phrase.strip(), "loc": (location or "").strip(), "h": within_hours},
@@ -354,11 +398,11 @@ async def start(
     # shells only — systemd units do not see it). Resolve it now so a missing binary fails
     # HERE with the reason on the run row, instead of leaving a pidless 'running' row that
     # reconciliation would later bless as a phantom 'done'.
-    npm = os.environ.get("SCRAPER_NPM") or shutil.which("npm")
+    npm = _resolve_npm()
     if not npm:
         err = (
-            "cannot start the scraper: no 'npm' on the corpus service PATH "
-            f"(PATH={os.environ.get('PATH', '')}). Set SCRAPER_NPM to the npm binary."
+            "cannot start the scraper: npm was not found. Install Node.js/npm or set "
+            "SCRAPER_NPM to the npm executable before starting GalaxyHire."
         )
         async with sm() as s:
             await s.execute(
@@ -372,6 +416,14 @@ async def start(
         raise ValueError(err)
 
     try:
+        child_env = {
+            **os.environ,
+            "CORPUS_API_KEY": os.environ.get("CORPUS_API_KEY", "dev-key"),
+            # npm installed by nvm/mise uses ``env node``. Put its directory
+            # first so it launches the matching Node version instead of an old
+            # system binary that happened to be on the service PATH.
+            "PATH": str(Path(npm).parent) + os.pathsep + os.environ.get("PATH", ""),
+        }
         proc = await asyncio.create_subprocess_exec(
             npm, "start", "--silent", "--", *node_args,
             cwd=str(SCRAPER_DIR),
@@ -380,7 +432,7 @@ async def start(
             # Its own process group, so stopping kills the whole npm → node tree rather than just the
             # npm wrapper, which would leave the scraper running and untracked.
             start_new_session=True,
-            env={**os.environ, "CORPUS_API_KEY": os.environ.get("CORPUS_API_KEY", "dev-key")},
+            env=child_env,
         )
     except OSError as exc:
         # Spawn itself failed (missing cwd, resource limits, …) — same visibility rule: the

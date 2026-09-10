@@ -284,6 +284,7 @@ class CorpusDiscoveryService:
         rerank: bool = True,
         use_llm: bool = False,
         fresh_hours: int | None = None,
+        observed_after: str | None = None,
     ) -> CorpusSearchResult:
         """Search the stored corpus and score the results against the profile.
 
@@ -303,6 +304,7 @@ class CorpusDiscoveryService:
                 location=location,
                 limit=retrieve_limit or max(limit, DEFAULT_RERANK_LIMIT),
                 fresh_hours=fresh_hours,
+                observed_after=observed_after,
             )
         except CorpusUnavailable as exc:
             # Not an error the caller should crash on: the profile, pipeline, and graph all work

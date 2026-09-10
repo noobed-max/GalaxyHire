@@ -47,6 +47,29 @@ export interface PortalSource {
   note: string;
 }
 
+/**
+ * A source may be present in the catalog for diagnostics while still being
+ * unavailable to a user selection (for example a retired/off feed). Keep the
+ * filter in one place so the dashboard, side panel, and explicit Find request
+ * cannot disagree about what "all" means.
+ */
+export function isSelectablePortal(source: PortalSource): boolean {
+  return Boolean(source.id && source.provider && (source.kind === "board" || source.kind === "tenant"))
+    && source.recency_policy !== "off";
+}
+
+export function selectablePortals(sources: PortalSource[]): PortalSource[] {
+  return sources.filter(isSelectablePortal);
+}
+
+/** Resolve one toggle using the product's two-state persistence contract:
+ * no saved map means every selectable source is on; explicit saved keys are
+ * authoritative, while a newly-added source missing from an older map starts on. */
+export function portalEnabled(source: PortalSource, saved: Record<string, boolean> | null): boolean {
+  if (!isSelectablePortal(source)) return false;
+  return saved === null ? true : (saved[source.id] ?? true);
+}
+
 export const discoveryApi = {
   scan: (api: ApiFetch) => api("/api/v1/scan", { method: "POST" }),
   stopScan: (api: ApiFetch) => api("/api/v1/scan/stop", { method: "POST" }),
@@ -123,10 +146,20 @@ export const discoveryApi = {
   ): Promise<{ ok: boolean; error?: string }> => {
     const res = await api("/api/v1/corpus/portals", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ portals }),
     });
-    if (!res.ok) return { ok: false, error: `Portals save returned ${res.status}` };
-    return res.json();
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = typeof body?.detail === "string"
+        ? body.detail
+        : typeof body?.error === "string" ? body.error : "";
+      return { ok: false, error: detail || `Portals save returned ${res.status}` };
+    }
+    const result = await res.json().catch(() => ({}));
+    return result?.ok === false
+      ? { ok: false, error: String(result.error || "The server rejected this portal selection.") }
+      : result;
   },
 
   scrapeStatus: async (api: ApiFetch): Promise<ScrapeState> => {
