@@ -37,6 +37,8 @@ GALAXYHIRE_DIR=~/code/GalaxyHire GALAXYHIRE_REF=master \
   curl -fsSL https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/install.sh | bash -s -- --start
 ```
 
+Re-running the one-liner refreshes a bootstrap checkout to the requested ref; existing `.env` files are kept. Set `GALAXYHIRE_NO_UPDATE=1` to leave the checkout untouched, or manage the checkout yourself with git (that is skipped automatically).
+
 The script detects your distribution, checks what is already installed, and only installs what is missing (Docker + Compose, uv, Node.js 22 LTS, Bun). It then installs every workspace's dependencies, creates local configuration from the committed examples, starts Postgres and Redis, applies the corpus schema, and builds the web UI and extension. It is idempotent: re-running skips what is already installed and never replaces an existing `.env`.
 
 Useful options:
@@ -66,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1          # install;
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start   # install and start
 ```
 
-Set `GALAXYHIRE_DIR` to choose the checkout location and `GALAXYHIRE_REF` to test a branch before running the one-liner.
+Set `GALAXYHIRE_DIR` to choose the checkout location and `GALAXYHIRE_REF` to test a branch before running the one-liner. Re-running refreshes a bootstrap checkout (existing `.env` files are kept); set `$env:GALAXYHIRE_NO_UPDATE = '1'` to skip the refresh.
 
 It checks what is already installed and only installs what is missing: Git, Node.js LTS, Bun, uv, and — when missing — Docker Desktop via winget. It then installs the workspace dependencies, creates the local configuration, deploys Postgres/Redis, applies the corpus schema, and builds the UI. The same options exist as on Linux/macOS: `-DryRun`, `-DepsOnly`, `-SkipDocker`, `-Yes`, and `-Help`.
 
