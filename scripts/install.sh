@@ -599,9 +599,12 @@ wait_for_postgres() {
   # "the database system is starting up". TCP is listening only once the real server is up.
   local last_error
   for _ in $(seq 1 90); do
-    last_error="$("${DOCKER[@]}" compose -f "${COMPOSE_FILE}" exec -T postgres \
-      env PGPASSWORD=galaxy psql -h 127.0.0.1 -U galaxy -d galaxy -tAc 'SELECT 1' 2>&1)"
-    if [ "$(printf '%s' "${last_error}" | tr -d '[:space:]')" = "1" ]; then
+    # The assignment is part of the if condition on purpose: a bare `last_error="$(...)"` takes the
+    # command's exit status and `set -e` would abort on the first failed attempt instead of retrying
+    # while the server is still starting.
+    if last_error="$("${DOCKER[@]}" compose -f "${COMPOSE_FILE}" exec -T postgres \
+        env PGPASSWORD=galaxy psql -h 127.0.0.1 -U galaxy -d galaxy -tAc 'SELECT 1' 2>&1)" \
+       && [ "$(printf '%s' "${last_error}" | tr -d '[:space:]')" = "1" ]; then
       ok "Postgres ready"
       return 0
     fi
@@ -614,8 +617,10 @@ wait_for_redis() {
   (( DRY_RUN )) && { info "[dry-run] would wait for Redis"; return 0; }
   local last_error
   for _ in $(seq 1 60); do
-    last_error="$("${DOCKER[@]}" compose -f "${COMPOSE_FILE}" exec -T redis redis-cli ping 2>&1)"
-    if printf '%s' "${last_error}" | grep -q PONG; then
+    # Same set -e rule as wait_for_postgres: the assignment must live in the if condition so a
+    # not-yet-listening Redis does not abort the installer on the first attempt.
+    if last_error="$("${DOCKER[@]}" compose -f "${COMPOSE_FILE}" exec -T redis redis-cli ping 2>&1)" \
+       && printf '%s' "${last_error}" | grep -q PONG; then
       ok "Redis ready"
       return 0
     fi
