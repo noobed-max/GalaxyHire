@@ -46,6 +46,10 @@ REPO_ROOT=''
 if [ -n "${SCRIPT_DIR}" ]; then
   REPO_ROOT="$(cd "${SCRIPT_DIR}/.." 2>/dev/null && pwd || true)"
 fi
+# The one-liner bootstrap re-execs this script without changing directory, so every docker compose
+# call must name the file: without -f, compose looks in the caller's cwd and fails with
+# "no configuration file provided".
+COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
 CORPUS_DIR="${REPO_ROOT}/services/corpus"
 API_DIR="${REPO_ROOT}/apps/api"
 WEB_DIR="${REPO_ROOT}/apps/web"
@@ -589,26 +593,29 @@ prepare_env() {
 # ── 6. infrastructure ─────────────────────────────────────────────────────────
 wait_for_postgres() {
   (( DRY_RUN )) && { info "[dry-run] would wait for Postgres"; return 0; }
+  local last_error
   for _ in $(seq 1 90); do
-    if "${DOCKER[@]}" compose exec -T postgres pg_isready -U galaxy >/dev/null 2>&1; then
+    if last_error="$("${DOCKER[@]}" compose -f "${COMPOSE_FILE}" exec -T postgres pg_isready -U galaxy 2>&1)"; then
       ok "Postgres ready"
       return 0
     fi
     sleep 1
   done
-  die "Postgres became ready-checkable but never accepted connections. Inspect: ${DOCKER[*]} compose logs postgres"
+  die "Postgres did not accept connections within 90s (${last_error:-no output}). Check: ${DOCKER[*]} compose -f ${COMPOSE_FILE} logs postgres"
 }
 
 wait_for_redis() {
   (( DRY_RUN )) && { info "[dry-run] would wait for Redis"; return 0; }
+  local last_error
   for _ in $(seq 1 60); do
-    if "${DOCKER[@]}" compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+    last_error="$("${DOCKER[@]}" compose -f "${COMPOSE_FILE}" exec -T redis redis-cli ping 2>&1)"
+    if printf '%s' "${last_error}" | grep -q PONG; then
       ok "Redis ready"
       return 0
     fi
     sleep 1
   done
-  die "Redis did not answer its health check. Inspect: ${DOCKER[*]} compose logs redis"
+  die "Redis did not answer its health check (${last_error:-no output}). Check: ${DOCKER[*]} compose -f ${COMPOSE_FILE} logs redis"
 }
 
 deploy_infra() {
@@ -623,7 +630,7 @@ deploy_infra() {
   fi
   discover_docker || die "The Docker daemon is not reachable. Start Docker and re-run."
   info "Starting containers..."
-  ( cd "${REPO_ROOT}" && run "${DOCKER[@]}" compose up -d )
+  run "${DOCKER[@]}" compose -f "${COMPOSE_FILE}" up -d
   wait_for_postgres
   wait_for_redis
 }
