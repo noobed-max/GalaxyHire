@@ -36,10 +36,11 @@ _log = get_logger(__name__)
 # 4,931-job corpus. 50 is a defensible *page*, but the UI posts /scan with no body, so this default
 # was the entire result set — with no paging and no way to ask for more, it read as the product
 # only being able to see 50 jobs.
-# Kept for callers that want an explicit recency window (the corpus still supports one);
-# the app default is None — unwindowed. Per the 2026-09 ruling freshness is a signal, not a
-# filter: every match is served with its posting date shown, fresh rows badge "<24h" and rank
-# up via the ranker's recency weight, and nothing is hidden for being old.
+# Product recency window enforced on every app search: only jobs a source proves were posted
+# within 24h — or, on dateless boards, jobs first seen within 24h — are served. Scraping alone
+# is not enough to enforce this: `first_seen` portals keep dated-but-old listings (a 2022
+# posting re-observed today is "seen now" but not "new"), so the window is applied at retrieval
+# alongside the run boundary. Callers that need the historical corpus pass fresh_hours=None.
 FRESH_WINDOW_HOURS = 24
 
 DEFAULT_RERANK_LIMIT = 200
@@ -283,7 +284,7 @@ class CorpusDiscoveryService:
         retrieve_limit: int | None = None,
         rerank: bool = True,
         use_llm: bool = False,
-        fresh_hours: int | None = None,
+        fresh_hours: int | None = FRESH_WINDOW_HOURS,
         observed_after: str | None = None,
     ) -> CorpusSearchResult:
         """Search the stored corpus and score the results against the profile.
@@ -327,7 +328,7 @@ class CorpusDiscoveryService:
                     f"{'s were' if len(projected) != 1 else ' was'} rejected."
                 )
             else:
-                result.note = await self._explain_empty(query)
+                result.note = await self._explain_empty(query, fresh_hours=fresh_hours)
             return result
 
         leads, matched = annotate_query_overlap(leads, query)
@@ -418,7 +419,7 @@ class CorpusDiscoveryService:
         ]
         return [*evaluated, *tail]
 
-    async def _explain_empty(self, query: str | None) -> str:
+    async def _explain_empty(self, query: str | None, *, fresh_hours: int | None = None) -> str:
         """Turn "no results" into something actionable.
 
         An empty corpus and an unembedded corpus both return zero rows, and the difference decides
@@ -431,13 +432,14 @@ class CorpusDiscoveryService:
         total = stats.get("canonical_jobs", 0)
         searchable = stats.get("searchable", 0)
         pending = stats.get("pending_embedding", 0)
+        window = f" in the last {int(fresh_hours)}h" if fresh_hours else ""
         if total == 0:
             return "The corpus is empty — run a broad scrape first (services/scraper-node)."
         if searchable == 0:
             return f"{total} jobs are stored but none are embedded yet ({pending} pending), so none are searchable."
         if pending:
-            return f"No matches for {query!r} among {searchable} searchable jobs ({pending} still embedding)."
-        return f"No matches for {query!r} among {searchable} searchable jobs."
+            return f"No matches for {query!r}{window} among {searchable} searchable jobs ({pending} still embedding)."
+        return f"No matches for {query!r}{window} among {searchable} searchable jobs."
 
     async def parse_query(self, text: str) -> dict[str, Any]:
         try:

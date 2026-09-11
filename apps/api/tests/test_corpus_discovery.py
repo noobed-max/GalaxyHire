@@ -15,6 +15,7 @@ import pytest
 
 from corpus.client import CorpusUnavailable
 from corpus.service import (
+    FRESH_WINDOW_HOURS,
     CorpusDiscoveryService,
     coerce_profile_for_scoring,
     corpus_job_to_lead,
@@ -664,11 +665,18 @@ class TestScrapeCarriesTheSelection:
         assert client.scrape_fresh_calls[-1]["portals"] == ["arbeitnow", "jobicy"]
 
 
-def test_search_leaves_recency_unwindowed_by_default():
-    # 2026-09 ruling: freshness is a signal, not a filter. Every match is served with its
-    # posting date shown; fresh rows badge "<24h" and rank up, nothing is hidden for age.
-    # Callers that want a hard window still pass fresh_hours explicitly.
+def test_search_applies_the_24h_product_window_by_default():
+    # The app only serves roles provably posted (or first seen, for dateless boards) within 24h.
+    # The run boundary alone is not enough: first_seen portals re-observe old dated listings.
     client = FakeClient(jobs=[])
     service = CorpusDiscoveryService(client)
     asyncio.run(service.search(query="swe", profile=None, settings=None, rerank=False))
+    assert client.search_calls[-1]["fresh_hours"] == FRESH_WINDOW_HOURS == 24
+
+
+def test_search_can_opt_out_of_the_window_explicitly():
+    # Callers that need the historical corpus (analytics, manual corpus inspection) pass None.
+    client = FakeClient(jobs=[])
+    service = CorpusDiscoveryService(client)
+    asyncio.run(service.search(query="swe", profile=None, settings=None, rerank=False, fresh_hours=None))
     assert client.search_calls[-1]["fresh_hours"] is None

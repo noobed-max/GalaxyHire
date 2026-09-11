@@ -124,7 +124,7 @@ def _search_kwargs(params: dict) -> dict:
     allowed = {
         "search_term", "positive_phrases", "positive_skills", "negative_titles",
         "negative_phrases", "max_years", "max_seniority", "remote", "location",
-        "blacklist", "limit", "sort", "seen_after",
+        "blacklist", "limit", "sort", "seen_after", "fresh_hours",
     }
     return {k: v for k, v in params.items() if k in allowed}
 

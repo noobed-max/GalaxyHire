@@ -82,7 +82,10 @@ def test_location_components_and_bengaluru_aliases_match_across_fields():
     assert params["loc_1"] == ["%india%"]
 
 
-def test_current_scrape_boundary_replaces_first_seen_freshness_window():
+def test_current_scrape_boundary_and_freshness_window_both_apply():
+    # The run boundary proves a row was *seen* now, not that it was *posted*
+    # recently: first_seen portals re-observe old dated listings. Both filters
+    # must therefore hold at once — the 24h window is not replaced by the run.
     observed_after = "2026-09-09T17:40:58+00:00"
     compiled = compile_query(
         search_term="software developer",
@@ -92,9 +95,10 @@ def test_current_scrape_boundary_replaces_first_seen_freshness_window():
     where, params = _hard_filters(compiled, "hashing-v1")
 
     assert "last_seen_at >= :observed_after" in where
-    assert "date_posted >=" not in where
-    assert "first_seen_at >=" not in where
+    assert "date_posted >=" in where
+    assert "first_seen_at >=" in where
     assert params["observed_after"] == datetime.fromisoformat(observed_after)
+    assert params["fresh_hours"] == 24
 
 
 def test_located_search_does_not_blanket_admit_remote():

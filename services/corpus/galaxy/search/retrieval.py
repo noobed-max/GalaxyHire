@@ -201,7 +201,10 @@ def _hard_filters(compiled: CompiledQuery, version: str) -> tuple[str, dict]:
         clauses.append("last_seen_at >= :observed_after")
         params["observed_after"] = datetime.fromisoformat(compiled.observed_after)
 
-    # Product recency window (R3, MAJOR-CHANGE/05 §3 P2). Two arms, deliberately asymmetric:
+    # Product recency window (R3, MAJOR-CHANGE/05 §3 P2). Applied independently of the run
+    # boundary: `observed_after` only proves a row was *seen* in this run, and `first_seen`
+    # portals deliberately keep dated-but-old listings, so a 2022 posting re-scraped today
+    # satisfies it. Two arms, deliberately asymmetric:
     #   date_posted inside the window           — the SOURCE proves the posting is fresh
     #   no source date + first_seen inside it   — "new to us", the honest fallback for the
     #                                            dateless boards (first_seen recency policy)
@@ -210,13 +213,7 @@ def _hard_filters(compiled: CompiledQuery, version: str) -> tuple[str, dict]:
     # sighting is the strongest freshness claim available for them — and the ranker labels which
     # arm produced each row (`RankedJob.freshness`, from date_posted nullness against this same
     # window) so the UI badges "posted <24h" and "new to us" as the different claims they are.
-    # A successful explicit scrape has already applied each source's recency
-    # policy and proves the listing was reachable in this run. Do not also
-    # require an older canonical row to have been *first* seen today: that
-    # would hide still-live, re-observed listings and make a 29-observation
-    # collection return an empty page. Background corpus searches without a
-    # run boundary keep the normal date/first-seen freshness window.
-    elif compiled.fresh_hours:
+    if compiled.fresh_hours:
         clauses.append(
             "(date_posted >= now() - make_interval(hours => :fresh_hours)"
             " OR (date_posted IS NULL AND first_seen_at >= now() - make_interval(hours => :fresh_hours)))"
