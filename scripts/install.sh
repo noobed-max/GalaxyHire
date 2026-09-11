@@ -691,10 +691,11 @@ detach_start() {
     # session. `sg docker` applies it without a re-login; it accepts only a single command string,
     # so the arguments are quoted into it.
     local cmd
-    printf -v cmd '%q ' "${REPO_ROOT}/scripts/start.sh" "$@"
+    printf -v cmd '%q ' bash "${REPO_ROOT}/scripts/start.sh" "$@"
     launch_detached sg docker -c "exec ${cmd% }"
   else
-    launch_detached "${REPO_ROOT}/scripts/start.sh" "$@"
+    # Run through bash explicitly: a checkout from an archive may not carry the executable bit.
+    launch_detached bash "${REPO_ROOT}/scripts/start.sh" "$@"
   fi
 }
 
@@ -758,7 +759,7 @@ install_systemd_service() {
 
   if [ -f "${RUN_DIR}/supervisor" ] || compgen -G "${RUN_DIR}/*.pid" >/dev/null; then
     info "Stopping the manually started instance before handing over to systemd..."
-    run "${REPO_ROOT}/scripts/start.sh" --stop || true
+    run bash "${REPO_ROOT}/scripts/start.sh" --stop || true
     sleep 2
   fi
 
@@ -779,12 +780,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=${REPO_ROOT}
+WorkingDirectory="${REPO_ROOT}"
 Environment=PATH=${path_line}
 Environment=HOME=${HOME}
 # Docker socket access without requiring a logout after the installer added the docker group.
 SupplementaryGroups=docker
-ExecStart=${REPO_ROOT}/scripts/start.sh
+ExecStart=/bin/bash "${REPO_ROOT}/scripts/start.sh"
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=30
@@ -868,7 +869,9 @@ download_checkout() { # archive_url, target
   [ -n "${base}" ] || die "The downloaded archive did not contain a repository directory."
   mkdir -p "${target}"
   # Overlay the code: .env files and .run state are not part of the archive, so they survive.
-  cp -R "${base}/." "${target}/"
+  cp -Rp "${base}/." "${target}/"
+  # Archive downloads can lose the executable bit; make the entry points runnable regardless.
+  chmod +x "${target}/scripts/install.sh" "${target}/scripts/start.sh" "${target}/scripts/uninstall.sh" 2>/dev/null || true
   rm -rf "${tmp}"
 }
 

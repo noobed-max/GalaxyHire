@@ -170,9 +170,9 @@ stop_systemd_units() {
 }
 
 stop_checkout_processes() {
-  if [ -x "${CHECKOUT}/scripts/start.sh" ] && { [ -f "${RUN_DIR}/supervisor" ] || compgen -G "${RUN_DIR}/*.pid" >/dev/null; }; then
+  if [ -f "${CHECKOUT}/scripts/start.sh" ] && { [ -f "${RUN_DIR}/supervisor" ] || compgen -G "${RUN_DIR}/*.pid" >/dev/null; }; then
     info "Stopping processes started from ${CHECKOUT}..."
-    run "${CHECKOUT}/scripts/start.sh" --stop || true
+    run bash "${CHECKOUT}/scripts/start.sh" --stop || true
   else
     local f process_id
     for f in "${RUN_DIR}"/*.pid; do
