@@ -593,15 +593,21 @@ prepare_env() {
 # ── 6. infrastructure ─────────────────────────────────────────────────────────
 wait_for_postgres() {
   (( DRY_RUN )) && { info "[dry-run] would wait for Postgres"; return 0; }
+  # A real query over TCP, not pg_isready on the Unix socket. During first-time initialization the
+  # image briefly serves a bootstrap server that listens on the socket only; pg_isready passes
+  # against it, then it shuts down and the real server starts. A migration in that window dies with
+  # "the database system is starting up". TCP is listening only once the real server is up.
   local last_error
   for _ in $(seq 1 90); do
-    if last_error="$("${DOCKER[@]}" compose -f "${COMPOSE_FILE}" exec -T postgres pg_isready -U galaxy 2>&1)"; then
+    last_error="$("${DOCKER[@]}" compose -f "${COMPOSE_FILE}" exec -T postgres \
+      env PGPASSWORD=galaxy psql -h 127.0.0.1 -U galaxy -d galaxy -tAc 'SELECT 1' 2>&1)"
+    if [ "$(printf '%s' "${last_error}" | tr -d '[:space:]')" = "1" ]; then
       ok "Postgres ready"
       return 0
     fi
     sleep 1
   done
-  die "Postgres did not accept connections within 90s (${last_error:-no output}). Check: ${DOCKER[*]} compose -f ${COMPOSE_FILE} logs postgres"
+  die "Postgres did not accept a query within 90s (${last_error:-no output}). Check: ${DOCKER[*]} compose -f ${COMPOSE_FILE} logs postgres"
 }
 
 wait_for_redis() {

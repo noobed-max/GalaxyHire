@@ -94,12 +94,15 @@ spawn() { # name, command...
 info "starting postgres + redis"
 docker compose up -d >/dev/null
 # `docker compose up` returns once containers are created, which is well before Postgres accepts
-# connections. The healthcheck is the real signal.
-for _ in $(seq 1 60); do
-  docker compose exec -T postgres pg_isready -U galaxy >/dev/null 2>&1 && break
+# connections. A real query over TCP is the signal: during first-time initialization the image
+# serves a bootstrap server on the Unix socket only, then restarts, and anything connecting in that
+# window dies with "the database system is starting up".
+for _ in $(seq 1 90); do
+  docker compose exec -T postgres env PGPASSWORD=galaxy psql -h 127.0.0.1 -U galaxy -d galaxy -tAc 'SELECT 1' >/dev/null 2>&1 && break
   sleep 1
 done
-docker compose exec -T postgres pg_isready -U galaxy >/dev/null 2>&1 || die "postgres never became ready"
+docker compose exec -T postgres env PGPASSWORD=galaxy psql -h 127.0.0.1 -U galaxy -d galaxy -tAc 'SELECT 1' >/dev/null 2>&1 \
+  || die "postgres never became ready"
 ok "database ready"
 
 info "applying migrations"

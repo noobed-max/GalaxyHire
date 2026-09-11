@@ -113,12 +113,15 @@ function Start-ServiceProcess {
 }
 
 function Wait-Postgres {
+    # A real query over TCP, not pg_isready on the Unix socket: during first-time initialization the
+    # image serves a bootstrap server on the socket only, then shuts down and restarts, and a
+    # migration in that window dies with "the database system is starting up".
     for ($i = 0; $i -lt 90; $i++) {
-        & docker compose -f $ComposeFile exec -T postgres pg_isready -U galaxy 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { Write-Host '  v database ready' -ForegroundColor Green; return }
+        $output = & docker compose -f $ComposeFile exec -T postgres env PGPASSWORD=galaxy psql -h 127.0.0.1 -U galaxy -d galaxy -tAc 'SELECT 1' 2>&1
+        if ($LASTEXITCODE -eq 0 -and (($output -join '') -replace '\s', '') -eq '1') { Write-Host '  v database ready' -ForegroundColor Green; return }
         Start-Sleep -Seconds 1
     }
-    throw 'Postgres did not become ready. Inspect: docker compose logs postgres'
+    throw 'Postgres did not accept a query. Inspect: docker compose logs postgres'
 }
 
 if ($Stop) {
