@@ -819,6 +819,7 @@ print_summary() {
   printf '%s\n' "  Logs        ${RUN_DIR}/*.log"
   printf '\n%s\n' "  Start       ./scripts/start.sh"
   printf '%s\n' "  Dev mode    ./scripts/start.sh --dev"
+  printf '%s\n' "  Update      ./scripts/update.sh"
   printf '%s\n' "  Stop        ./scripts/start.sh --stop"
   printf '%s\n' "  Docs        docs/getting-started.md"
   if (( INSTALL_SERVICE )); then
@@ -871,7 +872,7 @@ download_checkout() { # archive_url, target
   # Overlay the code: .env files and .run state are not part of the archive, so they survive.
   cp -Rp "${base}/." "${target}/"
   # Archive downloads can lose the executable bit; make the entry points runnable regardless.
-  chmod +x "${target}/scripts/install.sh" "${target}/scripts/start.sh" "${target}/scripts/uninstall.sh" 2>/dev/null || true
+  chmod +x "${target}"/scripts/*.sh 2>/dev/null || true
   rm -rf "${tmp}"
 }
 

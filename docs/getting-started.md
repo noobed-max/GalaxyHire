@@ -83,6 +83,28 @@ powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Stop
 
 The `make` commands below are the manual alternative. They require a POSIX shell (WSL qualifies), so native Windows users should prefer the PowerShell scripts.
 
+## Update
+
+Update an existing installation to the latest source and restart it in the mode it was running. The app is stopped first, the checkout is refreshed, dependencies and migrations are re-applied, the UI/extension are rebuilt, and the stack is started again — so it comes back on the new code. Your `.env` configuration and local data are preserved.
+
+```bash
+./scripts/update.sh                 # update; restart only if it was already running
+./scripts/update.sh --start         # update, then start even if it was stopped
+./scripts/update.sh --dev           # update, then restart the hot-reload dev server
+./scripts/update.sh --ref v1.5.0    # update to a specific branch or tag
+./scripts/update.sh --dry-run       # print every action without changing anything
+```
+
+One-liner (no checkout needed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/update.sh | bash
+```
+
+`GALAXYHIRE_DIR` targets another installation; `--ref`/`GALAXYHIRE_REF` selects a branch or tag; `GALAXYHIRE_REPO` and `GALAXYHIRE_ARCHIVE_URL` point at a fork or mirror. A git checkout is updated with `git pull` and must have no uncommitted changes; a bootstrap checkout is refreshed from the source archive. Full output is written to `.run/update-*.log`.
+
+On Windows, re-run the PowerShell installer one-liner; it refreshes the checkout, and `-Start` starts the stack again afterwards. Or stop the stack with `scripts\start.ps1 -Stop` before and after updating a git checkout manually.
+
 ## Uninstall
 
 Stop GalaxyHire and remove its Docker containers, network, database volume, systemd user service (if installed), and the shell PATH lines the installer added. Your profile/settings data and the checkout are kept unless you ask for them:

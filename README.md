@@ -53,6 +53,14 @@ Both installers detect what is already on the machine — Docker, Git, Node.js, 
 
 To uninstall, run `./scripts/uninstall.sh` (`scripts\uninstall.ps1` on Windows); add `--purge-data`/`-PurgeData` and `--remove-files`/`-RemoveFiles` to also remove your local data and the checkout.
 
+To update an existing installation to the latest source and restart it, run `./scripts/update.sh`, or use the one-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/update.sh | bash
+```
+
+Your `.env` configuration and local data are preserved.
+
 Prefer manual control? The make workflow below is the supported alternative. It requires Docker, Python 3.13 with [uv](https://docs.astral.sh/uv/), Node.js 20.19 or newer, and [Bun](https://bun.sh/) for the web test/build scripts.
 
 ```bash
