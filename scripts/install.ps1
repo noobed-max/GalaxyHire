@@ -73,6 +73,25 @@ $ErrorActionPreference = 'Stop'
 # When this file is piped (irm ... | iex) or run outside a checkout there is no repository to
 # install from. Download one first (no git required), then hand over to the real installer inside
 # it. A normal checkout skips this entirely.
+function Get-BootstrapCheckout {
+    param([string]$Ref, [string]$Target)
+    $archive = "https://codeload.github.com/noobed-max/GalaxyHire/zip/refs/heads/$Ref"
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ("galaxyhire-" + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    $zip = Join-Path $tmp 'galaxyhire.zip'
+    Invoke-WebRequest -Uri $archive -OutFile $zip -UseBasicParsing
+    Expand-Archive -Path $zip -DestinationPath $tmp -Force
+    $inner = Get-ChildItem $tmp -Directory |
+        Where-Object { Test-Path (Join-Path $_.FullName 'docker-compose.yml') } |
+        Select-Object -First 1
+    if (-not $inner) { throw 'The downloaded archive did not contain a repository directory.' }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Target) | Out-Null
+    New-Item -ItemType Directory -Force -Path $Target | Out-Null
+    # Overlay the code: .env files and .run state are not part of the archive, so they survive.
+    Copy-Item -Path (Join-Path $inner.FullName '*') -Destination $Target -Recurse -Force
+    Remove-Item -Recurse -Force $tmp
+}
+
 function Invoke-Bootstrap {
     param([hashtable]$BoundParameters)
     if ($env:OS -ne 'Windows_NT') {
@@ -80,10 +99,19 @@ function Invoke-Bootstrap {
     }
     $ref = if ($env:GALAXYHIRE_REF) { $env:GALAXYHIRE_REF } else { 'master' }
     $target = if ($env:GALAXYHIRE_DIR) { $env:GALAXYHIRE_DIR } else { Join-Path $HOME 'GalaxyHire' }
-    $archive = "https://codeload.github.com/noobed-max/GalaxyHire/zip/refs/heads/$ref"
 
     if (Test-Path (Join-Path $target 'docker-compose.yml')) {
-        Write-Host ("  > Using the existing checkout at {0}" -f $target) -ForegroundColor Cyan
+        if (Test-Path (Join-Path $target '.git')) {
+            Write-Host ("  > Using the existing git checkout at {0} (update it with git pull)" -f $target) -ForegroundColor Cyan
+        }
+        elseif ($env:GALAXYHIRE_NO_UPDATE) {
+            Write-Host ("  > Using the existing checkout at {0}" -f $target) -ForegroundColor Cyan
+        }
+        else {
+            Write-Host ("  > Refreshing the existing checkout at {0} ({1})..." -f $target, $ref) -ForegroundColor Cyan
+            Get-BootstrapCheckout -Ref $ref -Target $target
+            Write-Host ("  > Checkout updated at {0}" -f $target) -ForegroundColor Green
+        }
     }
     else {
         if (Test-Path $target) {
@@ -95,18 +123,7 @@ function Invoke-Bootstrap {
             }
         }
         Write-Host ("  > Downloading GalaxyHire ({0}) to {1}..." -f $ref, $target) -ForegroundColor Cyan
-        $tmp = Join-Path ([IO.Path]::GetTempPath()) ("galaxyhire-" + [Guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-        $zip = Join-Path $tmp 'galaxyhire.zip'
-        Invoke-WebRequest -Uri $archive -OutFile $zip -UseBasicParsing
-        Expand-Archive -Path $zip -DestinationPath $tmp -Force
-        $inner = Get-ChildItem $tmp -Directory |
-            Where-Object { Test-Path (Join-Path $_.FullName 'docker-compose.yml') } |
-            Select-Object -First 1
-        if (-not $inner) { throw 'The downloaded archive did not contain a repository directory.' }
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-        Move-Item -Path $inner.FullName -Destination $target
-        Remove-Item -Recurse -Force $tmp
+        Get-BootstrapCheckout -Ref $ref -Target $target
         Write-Host ("  > Checkout ready at {0}" -f $target) -ForegroundColor Green
     }
 
@@ -213,6 +230,24 @@ function Confirm {
     return $reply -match '^[Yy]'
 }
 
+# Resolve a command name to a concrete executable. PowerShell resolves a bare `npm` to npm.ps1 on
+# Windows when both npm.cmd and npm.ps1 exist. Node's npm.ps1 shim reconstructs its arguments from
+# the caller's SOURCE TEXT, so `& $FilePath @Arguments` (invoked from a function) makes it treat the
+# literal parameter name as the command: `Unknown command: "FilePath"`. The .cmd/.exe launchers
+# forward arguments correctly, so always prefer an Application (cmd/bat/exe) over an ExternalScript.
+function Resolve-NativeCommand {
+    param([string]$Name)
+    $found = @(Get-Command $Name -All -ErrorAction SilentlyContinue)
+    $apps = @($found | Where-Object { $_.CommandType -eq 'Application' })
+    if ($apps.Count -gt 0) {
+        $preferred = $apps | Where-Object { $_.Source -match '\.(cmd|bat|exe)$' } | Select-Object -First 1
+        if ($preferred) { return $preferred.Source }
+        return $apps[0].Source
+    }
+    if ($found.Count -gt 0) { return $found[0].Source }
+    return $Name
+}
+
 # Run a native command. Honors -DryRun, logs it, and throws on a non-zero exit code
 # unless -AllowFailure is set (callers then read $script:NativeExit).
 $script:NativeExit = 0
@@ -231,9 +266,12 @@ function Invoke-Native {
         return
     }
     Write-LogLine "RUN   $display"
-    Push-Location $WorkingDirectory
+    # Never invoke a PowerShell shim (npm.ps1); see Resolve-NativeCommand.
+    $resolved = Resolve-NativeCommand -Name $FilePath
+    if ($resolved -ne $FilePath) { Write-LogLine "      -> $resolved" }
+    Push-Location -LiteralPath $WorkingDirectory
     try {
-        & $FilePath @Arguments
+        & $resolved @Arguments
         $script:NativeExit = $LASTEXITCODE
     } finally {
         Pop-Location

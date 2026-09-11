@@ -836,31 +836,45 @@ set_total_steps() {
 # ── bootstrap (curl | bash) ───────────────────────────────────────────────────
 # Running from a pipe or from a copy of this file outside a checkout has no repository to install
 # from. Download one first (no git required), then hand over to the real installer inside it.
+download_checkout() { # archive_url, target
+  local archive_url=$1 target=$2
+  have curl || have wget || die "curl or wget is required to download GalaxyHire."
+  local tmp base
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/galaxyhire-bootstrap.XXXXXX")"
+  if have curl; then
+    curl -fsSL "${archive_url}" | tar -xz -C "${tmp}" || die "Could not download ${archive_url}"
+  else
+    wget -qO- "${archive_url}" | tar -xz -C "${tmp}" || die "Could not download ${archive_url}"
+  fi
+  base="$(find "${tmp}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+  [ -n "${base}" ] || die "The downloaded archive did not contain a repository directory."
+  mkdir -p "${target}"
+  # Overlay the code: .env files and .run state are not part of the archive, so they survive.
+  cp -R "${base}/." "${target}/"
+  rm -rf "${tmp}"
+}
+
 bootstrap_checkout() {
   local ref="${GALAXYHIRE_REF:-master}"
   local target="${GALAXYHIRE_DIR:-${HOME}/GalaxyHire}"
   local archive_url="https://codeload.github.com/noobed-max/GalaxyHire/tar.gz/refs/heads/${ref}"
 
   if [ -f "${target}/docker-compose.yml" ] && [ -d "${target}/services/corpus" ]; then
-    info "Using the existing checkout at ${target}"
+    if [ -d "${target}/.git" ]; then
+      info "Using the existing git checkout at ${target} (update it with git pull)"
+    elif [ -n "${GALAXYHIRE_NO_UPDATE:-}" ]; then
+      info "Using the existing checkout at ${target}"
+    else
+      info "Refreshing the existing checkout at ${target} (${ref})..."
+      download_checkout "${archive_url}" "${target}"
+      info "Checkout updated at ${target}"
+    fi
   else
     if [ -e "${target}" ] && [ -n "$(find "${target}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
       die "${target} exists but is not a GalaxyHire checkout. Set GALAXYHIRE_DIR to another path."
     fi
-    have curl || have wget || die "curl or wget is required to download GalaxyHire."
     info "Downloading GalaxyHire (${ref}) to ${target}..."
-    local tmp base
-    tmp="$(mktemp -d "${TMPDIR:-/tmp}/galaxyhire-bootstrap.XXXXXX")"
-    if have curl; then
-      curl -fsSL "${archive_url}" | tar -xz -C "${tmp}" || die "Could not download ${archive_url}"
-    else
-      wget -qO- "${archive_url}" | tar -xz -C "${tmp}" || die "Could not download ${archive_url}"
-    fi
-    base="$(find "${tmp}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-    [ -n "${base}" ] || die "The downloaded archive did not contain a repository directory."
-    mkdir -p "$(dirname "${target}")"
-    mv "${base}" "${target}"
-    rm -rf "${tmp}"
+    download_checkout "${archive_url}" "${target}"
     info "Checkout ready at ${target}"
   fi
 

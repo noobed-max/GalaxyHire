@@ -100,7 +100,10 @@ function Start-ServiceProcess {
         [Parameter(Mandatory = $true)][string]$WorkingDirectory
     )
     New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
-    $exe = (Get-Command $FilePath -ErrorAction Stop).Source
+    # Prefer a real Application over a PowerShell shim; Start-Process cannot run npm.ps1 correctly.
+    $found = @(Get-Command $FilePath -All -ErrorAction Stop)
+    $app = @($found | Where-Object { $_.CommandType -eq 'Application' }) | Select-Object -First 1
+    $exe = if ($app) { $app.Source } else { $found[0].Source }
     $proc = Start-Process -FilePath $exe -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory `
         -RedirectStandardOutput (Join-Path $RunDir "$Name.out.log") `
         -RedirectStandardError (Join-Path $RunDir "$Name.err.log") `
@@ -140,7 +143,7 @@ if (-not (Test-Command docker)) {
 }
 
 Write-Host 'starting postgres + redis' -ForegroundColor Cyan
-Push-Location $RepoRoot
+Push-Location -LiteralPath $RepoRoot
 try {
     & docker compose -f $ComposeFile up -d
     if ($LASTEXITCODE -ne 0) { throw 'docker compose up failed' }
@@ -150,7 +153,7 @@ try {
 Wait-Postgres
 
 Write-Host 'applying migrations' -ForegroundColor Cyan
-Push-Location $CorpusDir
+Push-Location -LiteralPath $CorpusDir
 try {
     & uv run python -c "import asyncio; from galaxy.db.engine import migrate; asyncio.run(migrate())"
     if ($LASTEXITCODE -ne 0) { throw 'migrations failed' }
@@ -162,7 +165,7 @@ if (-not $Dev) {
     if (-not $SkipBuild) {
         if (-not (Test-Command bun)) { throw 'Bun is required to build apps\web; run scripts\install.ps1 first.' }
         Write-Host 'building the UI' -ForegroundColor Cyan
-        Push-Location $WebDir
+        Push-Location -LiteralPath $WebDir
         try {
             & bun run build
             if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
