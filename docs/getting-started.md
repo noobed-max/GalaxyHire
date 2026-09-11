@@ -83,6 +83,29 @@ powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Stop
 
 The `make` commands below are the manual alternative. They require a POSIX shell (WSL qualifies), so native Windows users should prefer the PowerShell scripts.
 
+## Uninstall
+
+Stop GalaxyHire and remove its Docker containers, network, database volume, systemd user service (if installed), and the shell PATH lines the installer added. Your profile/settings data and the checkout are kept unless you ask for them:
+
+```bash
+./scripts/uninstall.sh                                     # from the checkout
+GALAXYHIRE_DIR=~/GalaxyHire ./scripts/uninstall.sh -y      # target a bootstrap checkout
+```
+
+Add `--purge-data` to also delete your local profile, settings, and leads, and `--remove-files` to also delete the checkout (git checkouts are refused). Use `--dry-run` to preview. One-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/noobed-max/GalaxyHire/master/scripts/uninstall.sh | bash -s -- --remove-files
+```
+
+On Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\uninstall.ps1 [-PurgeData] [-RemoveFiles]
+```
+
+Toolchains installed by the installer (uv, Node.js, Bun, Docker) are left alone.
+
 ## Install and start
 
 From the repository root:
