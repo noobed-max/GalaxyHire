@@ -51,6 +51,8 @@ On Windows (no checkout needed either):
 
 Both installers detect what is already on the machine — Docker, Git, Node.js, uv, Bun — and only install what is missing. They are safe to re-run, and use `--dry-run`/`-DryRun` to preview. Details: [Getting started](docs/getting-started.md).
 
+To uninstall, run `./scripts/uninstall.sh` (`scripts\uninstall.ps1` on Windows); add `--purge-data`/`-PurgeData` and `--remove-files`/`-RemoveFiles` to also remove your local data and the checkout.
+
 Prefer manual control? The make workflow below is the supported alternative. It requires Docker, Python 3.13 with [uv](https://docs.astral.sh/uv/), Node.js 20.19 or newer, and [Bun](https://bun.sh/) for the web test/build scripts.
 
 ```bash
