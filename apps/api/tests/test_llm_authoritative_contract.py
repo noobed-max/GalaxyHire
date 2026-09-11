@@ -12,7 +12,9 @@ from models.schema import (
     CandidateProfile,
     ExactMatchBullet,
     ExperienceEntry,
+    ProjectEntry,
     SimilarBulletPair,
+    SkillEntry,
 )
 from profile.ingestor import run
 from profile.normalization import normalize_candidate_model
@@ -177,3 +179,131 @@ def test_normalize_candidate_model_preserves_resume_link_fields_and_explicit_poi
     assert entry.exact_matches[0].existing_point_id == "p-old"
     assert entry.similar_pairs[0].existing_point_id == "p-sim"
     assert entry.new_points == ["A new point."]
+
+
+# A deliberately non-trivial résumé used by the completeness-guard tests. The
+# deterministic parser recovers Python/FastAPI/PostgreSQL and two projects from it.
+_SUBSTANTIVE_RESUME = """
+Asha Verma - Backend Engineer
+Bengaluru, India
+
+Summary
+Backend engineer with four years building data-heavy services in Python and TypeScript.
+
+Skills
+Python, FastAPI, PostgreSQL, React, Docker, Redis
+
+Experience
+Senior Engineer - FlowCorp (2023 - Present)
+- Built Vaani, a real-time multilingual voice assistant, in Python and FastAPI.
+- Designed the analytics pipeline that sped up reporting.
+
+Engineer - DataNimbus (2021 - 2023)
+- Shipped MeshSync, a peer-to-peer file sync engine.
+
+Projects
+- Vaani - a voice assistant for regional Indian languages. Stack: Python, FastAPI.
+- LedgerLite - a double-entry bookkeeping tool. Stack: Python, SQLite.
+"""
+
+
+def _empty_llm_extraction() -> CandidateProfile:
+    return CandidateProfile(n="Asha Verma", s="Backend engineer with four years of experience.")
+
+
+def _full_llm_extraction() -> CandidateProfile:
+    return CandidateProfile(
+        n="Asha Verma",
+        s="Backend engineer with four years of experience.",
+        skills=[SkillEntry(n="Python"), SkillEntry(n="FastAPI")],
+        exp=[
+            ExperienceEntry(
+                role="Senior Engineer",
+                co="FlowCorp",
+                period="2023 - Present",
+                points=["Built Vaani, a real-time multilingual voice assistant."],
+                d="Built Vaani, a real-time multilingual voice assistant.",
+            )
+        ],
+        projects=[ProjectEntry(title="LedgerLite", stack=["Python", "SQLite"])],
+    )
+
+
+def test_empty_llm_extraction_is_retried_once_and_the_retry_wins(monkeypatch):
+    """A name/summary-only response for a substantive document is a failed
+    extraction. One corrective retry must run and its populated result win."""
+    import llm
+
+    calls: list[str] = []
+
+    def fake_call_llm(system, user, model, step=None, **kwargs):
+        calls.append(user)
+        return _empty_llm_extraction() if len(calls) == 1 else _full_llm_extraction()
+
+    monkeypatch.setattr(llm, "resolve_config", lambda step=None: ("openai", "unit-test-key", "test-model"))
+    monkeypatch.setattr(llm, "call_llm", fake_call_llm)
+
+    result = run(raw=_SUBSTANTIVE_RESUME, existing_profile={})
+
+    assert len(calls) == 2
+    assert "CORRECTION" in calls[1]
+    assert [s.n for s in result.skills] == ["Python", "FastAPI"]
+    assert result.exp and result.exp[0].co == "FlowCorp"
+    assert [p.title for p in result.projects] == ["LedgerLite"]
+
+
+def test_twice_empty_llm_extraction_falls_back_to_the_local_parser(monkeypatch):
+    """Two independent empty responses must not be persisted as a successful
+    import: the deterministic parser recovers the structured content, and the
+    model's identity fields are retained."""
+    import llm
+
+    calls: list[str] = []
+
+    def fake_call_llm(system, user, model, step=None, **kwargs):
+        calls.append(user)
+        return _empty_llm_extraction()
+
+    monkeypatch.setattr(llm, "resolve_config", lambda step=None: ("openai", "unit-test-key", "test-model"))
+    monkeypatch.setattr(llm, "call_llm", fake_call_llm)
+
+    result = run(raw=_SUBSTANTIVE_RESUME, existing_profile={})
+
+    assert len(calls) == 2
+    assert result.n == "Asha Verma"
+    assert "Backend engineer with four years" in result.s
+    assert [s.n for s in result.skills] == ["Python", "FastAPI", "PostgreSQL", "SQL", "React", "Docker", "Redis"]
+    assert {p.title for p in result.projects} == {"Vaani", "LedgerLite"}
+
+
+def test_local_fallback_keeps_model_identity_when_parser_finds_none(monkeypatch):
+    """When the deterministic parser cannot produce a name/summary, the model's
+    identity fields are retained instead of returning an anonymous profile."""
+    import llm
+    import profile.ingestor as ingestor
+
+    monkeypatch.setattr(llm, "resolve_config", lambda step=None: ("openai", "unit-test-key", "test-model"))
+    monkeypatch.setattr(llm, "call_llm", lambda *args, **kwargs: _empty_llm_extraction())
+    monkeypatch.setattr(ingestor, "_parse_local", lambda txt: CandidateProfile())
+
+    result = ingestor.run(raw=_SUBSTANTIVE_RESUME, existing_profile={})
+
+    assert result.n == "Asha Verma"
+    assert result.s == "Backend engineer with four years of experience."
+
+
+def test_short_document_with_empty_arrays_is_not_retried(monkeypatch):
+    """A genuinely short note may legitimately have no structured items; the
+    guard is scoped to substantive documents so it does not second-guess it."""
+    import llm
+
+    calls: list[str] = []
+    short = CandidateProfile(n="Asha", s="Engineer.")
+
+    monkeypatch.setattr(llm, "resolve_config", lambda step=None: ("openai", "unit-test-key", "test-model"))
+    monkeypatch.setattr(llm, "call_llm", lambda *args, **kwargs: calls.append(1) or short)
+
+    result = run(raw="Asha - engineer. Short note.", existing_profile={})
+
+    assert len(calls) == 1
+    assert result.n == "Asha" and result.skills == []
